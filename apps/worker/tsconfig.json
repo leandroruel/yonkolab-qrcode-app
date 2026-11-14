@@ -1,7 +1,15 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-plugin/types"]
+    // Runtime types vêm do arquivo gerado por `wrangler types` (worker-configuration.d.ts).
+    // "@cloudflare/vitest-plugin/types" declara os módulos cloudflare:test / cloudflare:workers.
+    "types": ["@cloudflare/vitest-plugin/types"]
   },
-  "include": ["src", "drizzle.config.ts", "vitest.config.ts"]
+  "include": [
+    "worker-configuration.d.ts",
+    "src",
+    "test",
+    "drizzle.config.ts",
+    "vitest.config.ts"
+  ]
 }

@@ -1,15 +1,13 @@
-/**
- * Bindings do Worker (wrangler.jsonc).
- * Secrets e vars são adicionados aqui conforme os milestones (M1+).
- */
-export interface Env {
-  /** D1 (SQLite) — dados do app. */
-  DB: D1Database;
-  /** Workers Analytics Engine — eventos de scan (M5). */
-  SCANS: AnalyticsEngineDataset;
-  /** Static assets do SPA. */
-  ASSETS: Fetcher;
-}
+/** Bindings + secrets: gerados por `wrangler types` (worker-configuration.d.ts),
+ *  completados com os secrets em src/env.d.ts. */
+export type Env = Cloudflare.Env;
 
-/** Tipo de env do Hono. */
-export type AppEnv = { Bindings: Env };
+import type { users } from './db/schema';
+
+export type User = typeof users.$inferSelect;
+
+/** Tipo de env do Hono: bindings + user resolvido pelo requireUser. */
+export type AppEnv = {
+  Bindings: Env;
+  Variables: { user: User };
+};

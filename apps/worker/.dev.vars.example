@@ -1,0 +1,11 @@
+# Copie para .dev.vars (gitignored) e preencha para o wrangler dev.
+# Em produção: wrangler secret put <NOME>
+
+# OAuth Google — https://console.cloud.google.com/apis/credentials
+# Redirect URI autorizado (dev):  http://localhost:5173/qrcode/api/auth/google/callback
+# Redirect URI autorizado (prod): https://yonkolab.xyz/qrcode/api/auth/google/callback
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# Emails (separados por vírgula) que recebem is_admin no login
+ADMIN_EMAILS=voce@exemplo.com
