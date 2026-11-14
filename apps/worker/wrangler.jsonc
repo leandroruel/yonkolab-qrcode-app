@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yonkolab-qrcode",
+  "main": "src/index.ts",
+  // Deve ser ≤ hoje. Assets navigation prefere servir assets sem invocar o Worker (≥ 2025-04-01).
+  "compatibility_date": "2026-11-13",
+  "assets": {
+    // Build do SPA (`pnpm --filter @yonkolab/web build`). Precisa existir antes de `wrangler dev`.
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    // SPA montado sob /qrcode (exige Wrangler >= 4.148.0).
+    "base_path": "/qrcode",
+    "not_found_handling": "single-page-application",
+    // Somente estes caminhos invocam o Worker; todo o resto é servido por assets (sem gastar cota).
+    "run_worker_first": ["/qrcode/api/*", "/q/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "yonkolab-qrcode",
+      // PLACEHOLDER — substituir pelo ID real em M7, após `wrangler d1 create yonkolab-qrcode`.
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "analytics_engine_datasets": [{ "binding": "SCANS" }],
+  "observability": { "enabled": true }
+
+  // Rotas de produção (M7) — descomentar quando o zone yonkolab.xyz existir na Cloudflare:
+  // "routes": [
+  //   { "pattern": "yonkolab.xyz/qrcode*", "zone_name": "yonkolab.xyz" },
+  //   { "pattern": "yonkolab.xyz/q/*", "zone_name": "yonkolab.xyz" }
+  // ]
+}

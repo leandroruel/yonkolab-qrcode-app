@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Builds
+dist/
+dist-worker/
+
+# Wrangler / Cloudflare local state and secrets
+.wrangler/
+.dev.vars
+
+# Env
+.env
+.env.*
+
+# Tooling
+coverage/
+*.tsbuildinfo
+.eslintcache
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
