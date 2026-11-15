@@ -53,3 +53,27 @@ por ora Query cuida do estado de servidor.
 em fixture de teste via `readD1Migrations`.
 **Consequências:** testes rodam no mesmo runtime de produção (fideldade alta), porém mais
 lentos que Vitest puro — aceitável no escopo do MVP.
+
+## D7 — Landing carrega primeiro; demos de QR e rotas internas sob demanda (fatia 0)
+
+**Contexto:** a landing precisa de LCP < 2,5 s em 4G e JS inicial enxuto. `qr-code-styling`
+(46 KB) e canvas atrás de quatro QRs competiam com o primeiro paint; o `QueryClientProvider`
+puxava TanStack Query para o bundle inicial mesmo sem uso na landing.
+**Decisão:** landing é o chunk inicial (é a rota de entrada) e as páginas internas usam
+`React.lazy`. As demos de QR carregam depois de `requestIdleCallback` (hero) ou quando a seção
+chega a 700 px do viewport (vitrine). Removemos `@tanstack/react-query` do app: o diagnóstico
+de `/status` usa `fetch` + estado local. O menu mobile foi movido para fora do `<header>` —
+`backdrop-filter` no header cria containing block e quebrava o `position: fixed` do sheet.
+**Consequências:** o JS inicial não inclui a lib de QR; o custo aparece só quando o visitante
+vê as demos. Se surgir estado de servidor compartilhado (ex.: "Meus QR codes"), reavaliamos
+uma lib de cache em vez de reativar a dependência sem necessidade.
+
+## D8 — Sem shadcn/Radix nesta fatia; accordion nativo acessível
+
+**Contexto:** o pedido sugere accordion do shadcn para o FAQ. Adicionar Radix só para isso
+custaria dependência e JS sem ganho real num FAQ de cinco itens.
+**Decisão:** `<details>/<summary>` estilizados, com foco visível, `aria` nativo do elemento,
+ícone que gira e funcionamento sem JS.
+**Consequências:** zero dependência nova; se o produto evoluir para componentes complexos
+(dialog, combobox), aí sim avaliamos Radix/shadcn por componente.
+
