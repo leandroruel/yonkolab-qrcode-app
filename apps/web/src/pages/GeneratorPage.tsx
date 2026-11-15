@@ -9,16 +9,51 @@ import {
   Loader2,
   MessageCircle,
 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 
 type QrType = 'site' | 'whatsapp';
 
 const STEPS = ['Tipo', 'Conteúdo', 'Personalizar'] as const;
+const DRAFT_KEY = 'yonkolab:qr-draft';
+
+/** Tipos que o gerador já entrega conteúdo neste passo da entrega. */
+const READY_TYPES = new Set<string>(['site', 'whatsapp']);
+
+const TYPE_LABELS: Record<string, string> = {
+  site: 'Site',
+  whatsapp: 'WhatsApp',
+  vcard: 'vCard',
+  pix: 'PIX',
+  texto: 'Texto',
+  wifi: 'Wi-Fi',
+  email: 'Email',
+};
 
 export default function GeneratorPage() {
-  const [type, setType] = useState<QrType>('site');
-  const [step, setStep] = useState(1);
+  // `?tipo=` vem dos cards da landing; tipos prontos pulam direto ao passo 2.
+  const [searchParams] = useSearchParams();
+  const tipoParam = searchParams.get('tipo');
+  const tipoValido = tipoParam !== null && READY_TYPES.has(tipoParam);
+  const passoParam = searchParams.get('passo');
+
+  const [type, setType] = useState<QrType>(tipoParam === 'whatsapp' ? 'whatsapp' : 'site');
+  const [step, setStep] = useState(() => {
+    const parsed = passoParam ? Number(passoParam) : NaN;
+    if (Number.isFinite(parsed)) return Math.min(Math.max(Math.trunc(parsed), 1), 2);
+    return tipoValido ? 2 : 1;
+  });
+
+  // Mantém um rascunho local para o CTA "Continuar meu QR Code" da landing.
+  // Só grava depois que o visitante avançou para o conteúdo (passo 2).
+  useEffect(() => {
+    if (step < 2) return;
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ step, tipo: type }));
+    } catch {
+      // localStorage indisponível: sem rascunho nesta sessão.
+    }
+  }, [step, type]);
   const [loading, setLoading] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +131,7 @@ export default function GeneratorPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Gerador de QR code</h1>
-        <p className="mt-1 text-sm text-neutral-600">
+        <p className="mt-1 text-sm subtle">
           Escolha o tipo, preencha o conteúdo e personalize. Grátis e sem cadastro.
         </p>
       </div>
@@ -111,17 +146,17 @@ export default function GeneratorPage() {
             <li key={label} className="flex flex-1 items-center gap-2">
               <span
                 className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-semibold ${
-                  active || done ? 'bg-neutral-900 text-white' : 'bg-neutral-200 text-neutral-500'
+                  active || done ? 'bg-[var(--brand)] text-white' : 'bg-[var(--surface)] subtle'
                 }`}
               >
                 {n}
               </span>
               <span
-                className={`text-sm ${active ? 'font-medium text-neutral-900' : 'text-neutral-500'}`}
+                className={`text-sm ${active ? 'font-medium text-[var(--fg)]' : 'subtle'}`}
               >
                 {label}
               </span>
-              {n < STEPS.length && <span className="h-px flex-1 bg-neutral-200" />}
+              {n < STEPS.length && <span className="h-px flex-1 bg-[var(--surface)]" />}
             </li>
           );
         })}
@@ -135,19 +170,26 @@ export default function GeneratorPage() {
 
       {/* Passo 1: tipo */}
       {step === 1 && (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-3">
+          {tipoParam && !tipoValido && (
+            <p className="rounded-xl border border-[var(--line)] bg-[var(--brand-soft)] p-3 text-sm">
+              O tipo <strong>{TYPE_LABELS[tipoParam] ?? tipoParam}</strong> chega nas próximas
+              etapas. Por enquanto, geramos QR de Site e WhatsApp por aqui.
+            </p>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
           <button
             type="button"
             onClick={() => {
               setType('site');
               setStep(2);
             }}
-            className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-white p-4 text-left transition-colors hover:border-neutral-900"
+            className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4 text-left transition-colors hover:border-[var(--brand)]"
           >
             <Link2 className="h-5 w-5" />
             <span>
               <span className="block font-medium">Site / URL</span>
-              <span className="block text-sm text-neutral-500">Abra um link ao escanear</span>
+              <span className="block text-sm subtle">Abra um link ao escanear</span>
             </span>
           </button>
           <button
@@ -156,27 +198,28 @@ export default function GeneratorPage() {
               setType('whatsapp');
               setStep(2);
             }}
-            className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-white p-4 text-left transition-colors hover:border-neutral-900"
+            className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4 text-left transition-colors hover:border-[var(--brand)]"
           >
             <MessageCircle className="h-5 w-5" />
             <span>
               <span className="block font-medium">WhatsApp</span>
-              <span className="block text-sm text-neutral-500">Inicie uma conversa</span>
+              <span className="block text-sm subtle">Inicie uma conversa</span>
             </span>
           </button>
+        </div>
         </div>
       )}
 
       {/* Passo 2: conteúdo */}
       {step === 2 && (
         <form
-          className="space-y-4 rounded-lg border border-neutral-200 bg-white p-4"
+          className="space-y-4 rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4"
           onSubmit={(e) => {
             e.preventDefault();
             void generateQr();
           }}
         >
-          <h2 className="text-sm font-semibold text-neutral-900">
+          <h2 className="text-sm font-semibold text-[var(--fg)]">
             {type === 'whatsapp' ? 'Dados do WhatsApp' : 'Link de destino'}
           </h2>
 
@@ -192,7 +235,7 @@ export default function GeneratorPage() {
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://exemplo.com"
-                  className="w-full rounded-md border border-neutral-300 px-3 py-2 focus:ring-2 focus:ring-neutral-900 focus:outline-none"
+                  className="w-full rounded-md border border-[var(--line)] px-3 py-2 focus:ring-2 focus:ring-[var(--brand)] focus:outline-none"
                   required
                 />
               </div>
@@ -206,7 +249,7 @@ export default function GeneratorPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   maxLength={60}
-                  className="w-full rounded-md border border-neutral-300 px-3 py-2 focus:ring-2 focus:ring-neutral-900 focus:outline-none"
+                  className="w-full rounded-md border border-[var(--line)] px-3 py-2 focus:ring-2 focus:ring-[var(--brand)] focus:outline-none"
                 />
               </div>
             </>
@@ -223,7 +266,7 @@ export default function GeneratorPage() {
                     inputMode="numeric"
                     value={country}
                     onChange={(e) => setCountry(e.target.value.replace(/\D/g, '').slice(0, 3))}
-                    className="w-full rounded-md border border-neutral-300 px-3 py-2 focus:ring-2 focus:ring-neutral-900 focus:outline-none"
+                    className="w-full rounded-md border border-[var(--line)] px-3 py-2 focus:ring-2 focus:ring-[var(--brand)] focus:outline-none"
                   />
                 </div>
                 <div>
@@ -237,7 +280,7 @@ export default function GeneratorPage() {
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="(11) 91234-5678"
-                    className="w-full rounded-md border border-neutral-300 px-3 py-2 focus:ring-2 focus:ring-neutral-900 focus:outline-none"
+                    className="w-full rounded-md border border-[var(--line)] px-3 py-2 focus:ring-2 focus:ring-[var(--brand)] focus:outline-none"
                     required
                   />
                 </div>
@@ -252,7 +295,7 @@ export default function GeneratorPage() {
                   onChange={(e) => setMessage(e.target.value)}
                   rows={3}
                   maxLength={300}
-                  className="w-full rounded-md border border-neutral-300 px-3 py-2 focus:ring-2 focus:ring-neutral-900 focus:outline-none"
+                  className="w-full rounded-md border border-[var(--line)] px-3 py-2 focus:ring-2 focus:ring-[var(--brand)] focus:outline-none"
                   placeholder="Olá! Quero mais informações."
                 />
               </div>
@@ -263,14 +306,14 @@ export default function GeneratorPage() {
             <button
               type="button"
               onClick={() => setStep(1)}
-              className="inline-flex items-center gap-1 text-sm text-neutral-600 hover:text-neutral-900"
+              className="inline-flex items-center gap-1 text-sm subtle hover:text-[var(--fg)]"
             >
               <ArrowLeft className="h-4 w-4" /> Voltar
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-md bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--brand-strong)] disabled:opacity-50"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               {loading ? 'Gerando…' : 'Gerar QR code'}
@@ -283,7 +326,7 @@ export default function GeneratorPage() {
       {/* Passo 3: personalizar + baixar */}
       {step === 3 && (
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_16rem]">
-          <div className="grid place-items-center rounded-lg border border-neutral-200 bg-white p-4">
+          <div className="grid place-items-center rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4">
             {qrDataUrl ? (
               <img
                 src={qrDataUrl}
@@ -291,12 +334,12 @@ export default function GeneratorPage() {
                 className="h-auto w-full max-w-xs rounded"
               />
             ) : (
-              <p className="py-12 text-sm text-neutral-500">Gere o QR code para ver a prévia.</p>
+              <p className="py-12 text-sm subtle">Gere o QR code para ver a prévia.</p>
             )}
           </div>
 
-          <div className="space-y-4 rounded-lg border border-neutral-200 bg-white p-4">
-            <h2 className="text-sm font-semibold text-neutral-900">Personalização</h2>
+          <div className="space-y-4 rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4">
+            <h2 className="text-sm font-semibold text-[var(--fg)]">Personalização</h2>
 
             <div>
               <label className="mb-1 block text-sm font-medium" htmlFor="color">
@@ -307,7 +350,7 @@ export default function GeneratorPage() {
                 type="color"
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
-                className="h-9 w-full cursor-pointer rounded border border-neutral-300 bg-white"
+                className="h-9 w-full cursor-pointer rounded border border-[var(--line)] bg-[var(--elevated)]"
               />
             </div>
 
@@ -320,7 +363,7 @@ export default function GeneratorPage() {
                 type="color"
                 value={bgColor}
                 onChange={(e) => setBgColor(e.target.value)}
-                className="h-9 w-full cursor-pointer rounded border border-neutral-300 bg-white"
+                className="h-9 w-full cursor-pointer rounded border border-[var(--line)] bg-[var(--elevated)]"
               />
             </div>
 
@@ -335,7 +378,7 @@ export default function GeneratorPage() {
                 max={6}
                 value={margin}
                 onChange={(e) => setMargin(Number(e.target.value))}
-                className="w-full accent-neutral-900"
+                className="w-full accent-[var(--brand)]"
               />
             </div>
 
@@ -344,7 +387,7 @@ export default function GeneratorPage() {
                 type="button"
                 onClick={() => void generateQr()}
                 disabled={loading}
-                className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium transition-colors hover:border-neutral-900 disabled:opacity-50"
+                className="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium transition-colors hover:border-[var(--brand)] disabled:opacity-50"
               >
                 {loading ? 'Atualizando…' : 'Aplicar estilo'}
               </button>
@@ -352,7 +395,7 @@ export default function GeneratorPage() {
                 type="button"
                 onClick={download}
                 disabled={!qrDataUrl}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:opacity-50"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[var(--brand)] px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--brand-strong)] disabled:opacity-50"
               >
                 <Download className="h-4 w-4" /> Baixar PNG
               </button>
@@ -362,7 +405,7 @@ export default function GeneratorPage() {
                   if (qrDataUrl) void navigator.clipboard.writeText(qrDataUrl);
                 }}
                 disabled={!qrDataUrl}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-neutral-300 px-3 py-2 text-sm transition-colors hover:border-neutral-900 disabled:opacity-50"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm transition-colors hover:border-[var(--brand)] disabled:opacity-50"
               >
                 <Copy className="h-4 w-4" /> Copiar imagem
               </button>
@@ -372,14 +415,14 @@ export default function GeneratorPage() {
                   if (qrDataUrl) window.open(qrDataUrl, '_blank');
                 }}
                 disabled={!qrDataUrl}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-neutral-300 px-3 py-2 text-sm transition-colors hover:border-neutral-900 disabled:opacity-50"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm transition-colors hover:border-[var(--brand)] disabled:opacity-50"
               >
                 <Eye className="h-4 w-4" /> Abrir
               </button>
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="inline-flex w-full items-center justify-center gap-1 pt-1 text-sm text-neutral-600 hover:text-neutral-900"
+                className="inline-flex w-full items-center justify-center gap-1 pt-1 text-sm subtle hover:text-[var(--fg)]"
               >
                 <ArrowLeft className="h-4 w-4" /> Editar conteúdo
               </button>
@@ -388,7 +431,7 @@ export default function GeneratorPage() {
         </div>
       )}
 
-      <p className="text-sm text-neutral-600">
+      <p className="text-sm subtle">
         Quer um QR que possa ser editado depois?{' '}
         <Link className="underline" to="/create">
           Criar QR dinâmico
