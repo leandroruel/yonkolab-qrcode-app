@@ -161,7 +161,7 @@ function PersonalizationPanel({
   setCornerColorMode,
   _qrOptions,
   buildQrDataUrl,
-  qrDataUrl,
+  setQrDataUrl,
   loading,
 }: {
   qrShape: string;
@@ -178,7 +178,7 @@ function PersonalizationPanel({
   setCornerColorMode: (s: string) => void;
   _qrOptions: Record<string, unknown>;
   buildQrDataUrl: () => Promise<string | null>;
-  qrDataUrl: string | null;
+  setQrDataUrl: (u: string) => void;
   loading: boolean;
 }) {
   const QR_SHAPES: ShapeOption[] = ['square', 'dots', 'rounded', 'classy'];
@@ -186,8 +186,9 @@ function PersonalizationPanel({
   const DOT_SHAPES: ShapeOption[] = ['square', 'rounded', 'circle', 'extra-rounded'];
 
   const regenerate = useCallback(async () => {
-    await buildQrDataUrl();
-  }, [buildQrDataUrl]);
+    const dataUrl = await buildQrDataUrl();
+    if (dataUrl) setQrDataUrl(dataUrl);
+  }, [buildQrDataUrl, setQrDataUrl]);
 
   return (
     <div className="space-y-3 rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4">
@@ -327,23 +328,15 @@ function PersonalizationPanel({
         )}
       </div>
 
-      {/* Rodapé do painel: atualizar + baixar */}
-      <div className="mt-3 flex items-center justify-between gap-2 pt-2 border-t border-[var(--line)]">
+      {/* Rodapé do painel: atualizar */}
+      <div className="mt-3 pt-2 border-t border-[var(--line)]">
         <button
           type="button"
           onClick={regenerate}
           disabled={loading}
-          className="flex-1 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium transition-colors hover:border-[var(--brand)] disabled:opacity-50"
+          className="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium transition-colors hover:border-[var(--brand)] disabled:opacity-50"
         >
           {loading ? 'Atualizando…' : 'Aplicar estilo'}
-        </button>
-        <button
-          type="button"
-          onClick={() => {}}
-          disabled={!qrDataUrl || loading}
-          className="flex-1 rounded-md bg-[var(--brand)] px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--brand-strong)] disabled:opacity-50"
-        >
-          Baixar QR
         </button>
       </div>
     </div>
@@ -489,7 +482,7 @@ export default function GeneratorPage() {
     }
     setQrDataUrl(dataUrl);
     setLoading(false);
-  }, [payload, buildQrDataUrl]);
+  }, [payload, buildQrDataUrl, setQrDataUrl]);
 
   const download = useCallback(() => {
     if (!qrDataUrl) return;
@@ -772,7 +765,7 @@ export default function GeneratorPage() {
                   setCornerColorMode={(s) => setCornerColorMode(s as 'igual' | 'personalizada')}
                   _qrOptions={_qrOptions}
                   buildQrDataUrl={buildQrDataUrl}
-                  qrDataUrl={qrDataUrl}
+                  setQrDataUrl={setQrDataUrl}
                   loading={loading}
                 />
               )}
