@@ -390,6 +390,8 @@ export default function GeneratorPage() {
 
   // Estilo (passo 3)
   const [color, setColor] = useState('#111111');
+  const [bgColor, setBgColor] = useState('#ffffff');
+  const [margin, setMargin] = useState(2);
   const [qrShape, setQrShape] = useState<'square' | 'rounded' | 'circle'>('square');
   const [cornerShape, setCornerShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>('square');
   const [dotShape, setDotShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>('square');
@@ -438,15 +440,15 @@ export default function GeneratorPage() {
       height: 512,
       type: 'canvas',
       data: payload,
-      margin: 2,
+      margin,
       qrOptions: { errorCorrectionLevel: 'Q' },
       dotsOptions: { color, type: dotsType },
       cornersSquareOptions: { color: effectiveColor, type: cornerType },
       cornersDotOptions: { color: effectiveColor, type: dotType },
-      backgroundOptions: { color: '#ffffff' },
+      backgroundOptions: { color: bgColor },
     };
     return opts;
-  }, [payload, color, qrShape, cornerShape, dotShape, cornerColorMode, cornerColor]);
+  }, [payload, margin, color, bgColor, qrShape, cornerShape, dotShape, cornerColorMode, cornerColor]);
 
   const buildQrDataUrl = useCallback(async (): Promise<string | null> => {
     if (!payload) return null;
@@ -765,8 +767,72 @@ export default function GeneratorPage() {
                 />
               )}
               {level2Tab === 'geral' && (
-                <div className="rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4 min-h-[300px]">
-                  <p className="text-sm subtle">Geral será preenchido na próxima fatia.</p>
+                <div className="space-y-4 rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4">
+                  <h2 className="text-sm font-semibold text-[var(--fg)]">Geral</h2>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-[var(--fg)]">Cor dos módulos</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={color}
+                          onChange={(e) => setColor(e.target.value)}
+                          className="h-8 w-8 cursor-pointer rounded border border-[var(--line)]"
+                        />
+                        <input
+                          type="text"
+                          value={color.replace('#', '')}
+                          onChange={(e) => {
+                            const v = e.target.value.replace('#', '');
+                            setColor('#' + v);
+                          }}
+                          className="w-full rounded-md border border-[var(--line)] px-2 py-1.5 text-xs focus:ring-2 focus:ring-[var(--brand)] focus:outline-none"
+                          placeholder="000000"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-[var(--fg)]">Cor de fundo</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={bgColor}
+                          onChange={(e) => setBgColor(e.target.value)}
+                          className="h-8 w-8 cursor-pointer rounded border border-[var(--line)]"
+                        />
+                        <input
+                          type="text"
+                          value={bgColor.replace('#', '')}
+                          onChange={(e) => {
+                            const v = e.target.value.replace('#', '');
+                            setBgColor('#' + v);
+                          }}
+                          className="w-full rounded-md border border-[var(--line)] px-2 py-1.5 text-xs focus:ring-2 focus:ring-[var(--brand)] focus:outline-none"
+                          placeholder="ffffff"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-[var(--fg)]">
+                        Margem (módulos)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={0}
+                          max={6}
+                          step={1}
+                          value={margin}
+                          onChange={(e) => setMargin(Number(e.target.value))}
+                          className="w-full accent-[var(--brand)]"
+                        />
+                        <span className="text-xs text-[var(--muted)]">{margin}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
               {level2Tab === 'senha' && (
