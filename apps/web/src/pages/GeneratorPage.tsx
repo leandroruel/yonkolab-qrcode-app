@@ -26,7 +26,7 @@ type QrType =
   | 'wifi'
   | 'email';
 
-const STEPS = ['Tipo', 'Conteúdo', 'Personalizar'] as const;
+const STEPS = ['Tipo', 'Conteúdo', 'Estilo', 'Personalizar'] as const;
 const DRAFT_KEY = 'yonkolab:qr-draft';
 
 /** Tipos que o gerador já entrega conteúdo neste passo da entrega. */
@@ -102,6 +102,40 @@ const TYPE_CARDS: TypeCard[] = [
   },
 ];
 
+const SHAPE_QR = ['square', 'rounded', 'circle'] as const;
+const SHAPE_CORNER = ['square', 'rounded', 'circle', 'top-left-rounded', 'bottom-right-rounded'] as const;
+
+const LABEL_SHAPE: Record<string, string> = {
+  square: 'Quadrado',
+  rounded: 'Arredondado',
+  circle: 'Circular',
+  'top-left-rounded': 'Topo esquerda',
+  'bottom-right-rounded': 'Bottom direita',
+};
+
+const btnShape = (active: string, value: string, textSize: string) =>
+  `flex items-center gap-1.5 rounded-md border px-3 py-2 ${textSize} ${
+    active === value
+      ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)] font-medium'
+      : 'border-[var(--line)] bg-[var(--elevated)] text-[var(--fg)] hover:border-[var(--brand)]'
+  }`;
+
+/** Mapeia uma forma da UI para o tipo do qr-code-styling. */
+const mapShape = (s: string): 'square' | 'rounded' | 'circle' => {
+  switch (s) {
+    case 'square':
+      return 'square';
+    case 'rounded':
+      return 'rounded';
+    case 'circle':
+      return 'circle';
+    default:
+      // qr-code-styling não tem tipo nativo para um único canto arredondado;
+      // usamos 'rounded' como aproximação visual aceitável.
+      return 'rounded';
+  }
+};
+
 export default function GeneratorPage() {
   // `?tipo=` vem dos cards da landing; tipos prontos pulam direto ao passo 2.
   const [searchParams] = useSearchParams();
@@ -115,7 +149,7 @@ export default function GeneratorPage() {
   );
   const [step, setStep] = useState(() => {
     const parsed = passoParam ? Number(passoParam) : NaN;
-    if (Number.isFinite(parsed)) return Math.min(Math.max(Math.trunc(parsed), 1), 2);
+    if (Number.isFinite(parsed)) return Math.min(Math.max(Math.trunc(parsed), 1), 3);
     return tipoValido ? 2 : 1;
   });
 
@@ -145,6 +179,16 @@ export default function GeneratorPage() {
   const [bgColor, setBgColor] = useState('#ffffff');
   const [margin, setMargin] = useState(2);
 
+  // Logo
+  const [logoMode, setLogoMode] = useState<'simples' | 'com-logo'>('simples');
+  const [logoImage, setLogoImage] = useState<string | null>(null);
+  const [logoSize, setLogoSize] = useState(20); // % do QR
+
+  // Formatos
+  const [qrShape, setQrShape] = useState<'square' | 'rounded' | 'circle'>('square');
+  const [cornerShape, setCornerShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>('square');
+  const [dotShape, setDotShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>('square');
+
   const payload = useMemo(() => {
     if (type === 'whatsapp') {
       const digits = `${country}${phone}`.replace(/\D/g, '');
@@ -155,20 +199,38 @@ export default function GeneratorPage() {
   }, [type, country, phone, message, url]);
 
   // Gera a imagem do QR e retorna o data URL (sem tocar em estado do React).
-  const buildQrDataUrl = useCallback(async (): Promise<string | null> => {
-    if (!payload) return null;
-    const instance = new QRCodeStyling({
+
+  const qrOptions = useMemo<Record<string, unknown>>(() => {
+    const dotsType = mapShape(qrShape);
+    const cornerType = mapShape(cornerShape);
+    const dotType = mapShape(dotShape);
+    const opts: Record<string, unknown> = {
       width: 512,
       height: 512,
       type: 'canvas',
       data: payload,
       margin,
       qrOptions: { errorCorrectionLevel: 'Q' },
-      dotsOptions: { color, type: 'rounded' },
-      cornersSquareOptions: { color, type: 'extra-rounded' },
-      cornersDotOptions: { color },
+      dotsOptions: { color, type: dotsType },
+      cornersSquareOptions: { color, type: cornerType },
+      cornersDotOptions: { color, type: dotType },
       backgroundOptions: { color: bgColor },
-    });
+    };
+    if (logoMode === 'com-logo' && logoImage) {
+      opts.imageOptions = {
+        image: logoImage,
+        size: logoSize / 100,
+        margin: 2,
+      };
+    }
+    return opts;
+  }, [payload, margin, color, bgColor, logoMode, logoImage, logoSize, qrShape, cornerShape, dotShape]);
+
+  // Gera a imagem do QR e retorna o data URL (sem tocar em estado do React).
+  const buildQrDataUrl = useCallback(async (): Promise<string | null> => {
+    if (!payload) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const instance = new QRCodeStyling(qrOptions as any);
     const blob = await instance.getRawData('png');
     if (!(blob instanceof Blob)) return null;
     const reader = new FileReader();
@@ -177,7 +239,7 @@ export default function GeneratorPage() {
       reader.onerror = () => resolve(null);
       reader.readAsDataURL(blob);
     });
-  }, [payload, margin, color, bgColor]);
+  }, [payload, qrOptions]);
 
   // Pré-visualização ao vivo: regenera o QR sempre que conteúdo ou estilo mudam.
   useEffect(() => {
@@ -212,7 +274,7 @@ export default function GeneratorPage() {
     }
     setQrDataUrl(dataUrl);
     setLoading(false);
-    setStep(3);
+    setStep(4);
   }, [payload, buildQrDataUrl, setStep]);
 
   const download = useCallback(() => {
@@ -419,8 +481,173 @@ export default function GeneratorPage() {
         </form>
       )}
 
-      {/* Passo 3: personalizar + baixar */}
+      {/* Passo 3: estilo (simples vs com logo) + abas de formato */}
       {step === 3 && (
+        <div className="space-y-4 rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4">
+          <h2 className="text-sm font-semibold text-[var(--fg)]">Estilo do QR code</h2>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setLogoMode('simples')}
+              className={`flex flex-col items-center gap-2 rounded-lg border p-4 text-left transition-colors ${
+                logoMode === 'simples'
+                  ? 'border-[var(--brand)] bg-[var(--brand-soft)]'
+                  : 'border-[var(--line)] bg-[var(--elevated)] hover:border-[var(--brand)]'
+              }`}
+            >
+              <div className="grid h-10 w-10 place-items-center rounded-full text-xs font-semibold border border-[var(--brand)]">
+                1
+              </div>
+              <span className="font-medium text-[var(--fg)]">Simples</span>
+              <span className="text-xs subtle">Apenas cores e margem</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLogoMode('com-logo')}
+              className={`flex flex-col items-center gap-2 rounded-lg border p-4 text-left transition-colors ${
+                logoMode === 'com-logo'
+                  ? 'border-[var(--brand)] bg-[var(--brand-soft)]'
+                  : 'border-[var(--line)] bg-[var(--elevated)] hover:border-[var(--brand)]'
+              }`}
+            >
+              <div className="grid h-10 w-10 place-items-center rounded-full text-xs font-semibold border border-[var(--brand)]">
+                2
+              </div>
+              <span className="font-medium text-[var(--fg)]">Com logo</span>
+              <span className="text-xs subtle">Imagem ao centro do QR</span>
+            </button>
+          </div>
+
+          {logoMode === 'com-logo' && (
+            <div className="mt-4 space-y-2">
+              <label className="text-sm font-medium text-[var(--fg)]">Imagem da logo</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    const result = ev.target?.result;
+                    if (typeof result === 'string') setLogoImage(result);
+                  };
+                  reader.readAsDataURL(file);
+                }}
+                className="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:outline-none"
+              />
+              {logoImage && (
+                <div className="flex items-center gap-2">
+                  <img src={logoImage} alt="Logo" className="h-8 w-8 rounded object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => setLogoImage(null)}
+                    className="text-xs subtle hover:text-[var(--fg)]"
+                  >
+                    Remover
+                  </button>
+                </div>
+              )}
+              <div>
+                <label className="mb-1 block text-sm font-medium" htmlFor="logoSize">
+                  Tamanho da logo (% do QR)
+                </label>
+                <input
+                  id="logoSize"
+                  type="range"
+                  min={10}
+                  max={40}
+                  value={logoSize}
+                  onChange={(e) => setLogoSize(Number(e.target.value))}
+                  className="w-full accent-[var(--brand)]"
+                />
+                <span className="text-xs subtle">{logoSize}%</span>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4 space-y-2">
+            <label className="text-sm font-medium text-[var(--fg)]">Formato do QR</label>
+            <div className="flex gap-2">
+              {SHAPE_QR.map((shape) => (
+                <button
+                  key={shape}
+                  type="button"
+                  onClick={() => setQrShape(shape)}
+                  className={btnShape(qrShape, shape, 'text-sm')}
+                >
+                  {LABEL_SHAPE[shape]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <label className="text-sm font-medium text-[var(--fg)]">Formato do quadrado do canto</label>
+            <div className="flex gap-2 flex-wrap">
+              {SHAPE_CORNER.map((shape) => (
+                <button
+                  key={shape}
+                  type="button"
+                  onClick={() => setCornerShape(shape)}
+                  className={btnShape(cornerShape, shape, 'text-xs')}
+                >
+                  {LABEL_SHAPE[shape]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <label className="text-sm font-medium text-[var(--fg)]">Formato do ponto do canto</label>
+            <div className="flex gap-2 flex-wrap">
+              {SHAPE_CORNER.map((shape) => (
+                <button
+                  key={shape}
+                  type="button"
+                  onClick={() => setDotShape(shape)}
+                  className={btnShape(dotShape, shape, 'text-xs')}
+                >
+                  {LABEL_SHAPE[shape]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <label className="text-sm font-medium text-[var(--fg)]">Cor dos quadrados dos cantos</label>
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              className="h-9 w-full cursor-pointer rounded border border-[var(--line)] bg-[var(--elevated)]"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setStep(2)}
+              className="inline-flex items-center gap-1 text-sm subtle hover:text-[var(--fg)]"
+            >
+              <ArrowLeft className="h-4 w-4" /> Voltar
+            </button>
+            <button
+              type="button"
+              onClick={() => void generateQr()}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-md bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--brand-strong)] disabled:opacity-50"
+            >
+              {loading ? 'Gerando…' : 'Avançar'}
+              {!loading && <ArrowRight className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Passo 4: personalizar + baixar */}
+      {step === 4 && (
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_16rem]">
           <div className="grid place-items-center rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4">
             {qrDataUrl ? (
