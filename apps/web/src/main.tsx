@@ -1,17 +1,19 @@
-import { StrictMode, Suspense, lazy } from 'react';
+import { StrictMode, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom';
 import App from './App';
 import AppShell from './components/AppShell';
+import RouteError from './components/RouteError';
+import { lazyWithRetry } from './lib/lazy-with-retry';
 import LandingPage from './pages/Landing';
 import './index.css';
 
 // Rotas internas em chunk próprio: a landing não paga o custo do gerador nem do QR lib.
-const GeneratorPage = lazy(() => import('./pages/GeneratorPage'));
-const CreatePage = lazy(() => import('./pages/CreatePage'));
-const StatusPage = lazy(() => import('./pages/StatusPage'));
-const MeusQrsPage = lazy(() => import('./pages/MeusQrsPage'));
+const GeneratorPage = lazyWithRetry(() => import('./pages/GeneratorPage'));
+const CreatePage = lazyWithRetry(() => import('./pages/CreatePage'));
+const StatusPage = lazyWithRetry(() => import('./pages/StatusPage'));
+const MeusQrsPage = lazyWithRetry(() => import('./pages/MeusQrsPage'));
 
 // Mesmo base do Vite (vite.config.ts) e do assets.base_path do Worker.
 const APP_BASE_PATH = '/qrcode';
@@ -37,6 +39,7 @@ const router = createBrowserRouter(
     {
       path: '/',
       element: <App />,
+      errorElement: <RouteError />,
       children: [
         { index: true, element: <LandingPage /> },
         { path: 'criar', element: <Shell><GeneratorPage /></Shell> },
