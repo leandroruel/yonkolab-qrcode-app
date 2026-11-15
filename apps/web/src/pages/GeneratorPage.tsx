@@ -1,3 +1,4 @@
+import QRCodeStyling from 'qr-code-styling';
 import {
   ArrowLeft,
   ArrowRight,
@@ -93,6 +94,262 @@ const LEVEL2_TABS: Level2Tab[] = [
   { key: 'agendamento', label: 'Agendamento', disabled: true, soon: true },
 ];
 
+const SHAPE_LABELS: Record<string, string> = {
+  square: 'Quadrado',
+  rounded: 'Arredondado',
+  circle: 'Circular',
+  dots: 'Pontos',
+  classy: 'Clássico',
+  'classy-rounded': 'Clássico arredondado',
+  'extra-rounded': 'Extra arredondado',
+  'top-left-rounded': 'Topo esquerda',
+  'bottom-right-rounded': 'Bottom direita',
+};
+
+type ShapeOption = 'square' | 'rounded' | 'circle' | 'dots' | 'classy' | 'classy-rounded' | 'extra-rounded';
+
+function ShapeThumb({ value, active, label, onClick }: { value: ShapeOption; active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex flex-col items-center gap-1 rounded-xl border p-2 transition-colors ${
+        active
+          ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]'
+          : 'border-[var(--line)] bg-[var(--elevated)] text-[var(--fg)] hover:border-[var(--brand)]'
+      }`}
+    >
+      <span className="text-lg" aria-hidden>{shapeIcon(value)}</span>
+      <span className="text-[10px] font-medium">{label}</span>
+    </button>
+  );
+}
+
+function shapeIcon(value: ShapeOption): string {
+  switch (value) {
+    case 'square':
+      return '■';
+    case 'dots':
+      return '⬢';
+    case 'rounded':
+      return '◐';
+    case 'classy':
+      return '◑';
+    case 'classy-rounded':
+      return '◒';
+    case 'extra-rounded':
+      return '●';
+    default:
+      return '■';
+  }
+}
+
+/** Painel de Personalização (seção 6 do prompt). */
+function PersonalizationPanel({
+  qrShape,
+  setQrShape,
+  cornerShape,
+  setCornerShape,
+  dotShape,
+  setDotShape,
+  color,
+  setColor,
+  cornerColor,
+  setCornerColor,
+  cornerColorMode,
+  setCornerColorMode,
+  _qrOptions,
+  buildQrDataUrl,
+  qrDataUrl,
+  loading,
+}: {
+  qrShape: string;
+  setQrShape: (s: string) => void;
+  cornerShape: string;
+  setCornerShape: (s: string) => void;
+  dotShape: string;
+  setDotShape: (s: string) => void;
+  color: string;
+  setColor: (s: string) => void;
+  cornerColor: string;
+  setCornerColor: (s: string) => void;
+  cornerColorMode: string;
+  setCornerColorMode: (s: string) => void;
+  _qrOptions: Record<string, unknown>;
+  buildQrDataUrl: () => Promise<string | null>;
+  qrDataUrl: string | null;
+  loading: boolean;
+}) {
+  const QR_SHAPES: ShapeOption[] = ['square', 'dots', 'rounded', 'classy'];
+  const CORNER_SHAPES: ShapeOption[] = ['square', 'rounded', 'circle', 'extra-rounded'];
+  const DOT_SHAPES: ShapeOption[] = ['square', 'rounded', 'circle', 'extra-rounded'];
+
+  const regenerate = useCallback(async () => {
+    await buildQrDataUrl();
+  }, [buildQrDataUrl]);
+
+  return (
+    <div className="space-y-3 rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4">
+      <h2 className="text-sm font-semibold text-[var(--fg)]">Personalização</h2>
+
+      {/* 6.1 Formato do QR */}
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-[var(--fg)] uppercase tracking-wider">Formato do QR</label>
+        <div className="flex gap-2">
+          {QR_SHAPES.map((shape) => (
+            <ShapeThumb
+              key={shape}
+              value={shape}
+              active={qrShape === shape}
+              label={SHAPE_LABELS[shape] ?? shape}
+              onClick={() => {
+                setQrShape(shape);
+                void regenerate();
+              }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* 6.2 Formato do quadrado do canto */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-[var(--fg)] uppercase tracking-wider">Formato do quadrado do canto</label>
+          <div className="flex gap-2">
+            {CORNER_SHAPES.map((shape) => (
+              <ShapeThumb
+                key={shape}
+                value={shape}
+                active={cornerShape === shape}
+                label={SHAPE_LABELS[shape] ?? shape}
+                onClick={() => {
+                  setCornerShape(shape);
+                  void regenerate();
+                }}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-[var(--fg)] uppercase tracking-wider">Formato do ponto do canto</label>
+          <div className="flex gap-2">
+            {DOT_SHAPES.map((shape) => (
+              <ShapeThumb
+                key={shape}
+                value={shape}
+                active={dotShape === shape}
+                label={SHAPE_LABELS[shape] ?? shape}
+                onClick={() => {
+                  setDotShape(shape);
+                  void regenerate();
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 6.4 Cor dos quadrados dos cantos */}
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-[var(--fg)] uppercase tracking-wider">Cor dos quadrados dos cantos</label>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setCornerColorMode('igual')}
+            className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+              cornerColorMode === 'igual'
+                ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]'
+                : 'border-[var(--line)] bg-[var(--elevated)] text-[var(--fg)] hover:border-[var(--brand)]'
+            }`}
+          >
+            Igual ao QR
+          </button>
+          <button
+            type="button"
+            onClick={() => setCornerColorMode('personalizada')}
+            className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+              cornerColorMode === 'personalizada'
+                ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]'
+                : 'border-[var(--line)] bg-[var(--elevated)] text-[var(--fg)] hover:border-[var(--brand)]'
+            }`}
+          >
+            Personalizada
+          </button>
+        </div>
+        {cornerColorMode === 'personalizada' && (
+          <div className="space-y-2 mt-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-[10px] text-[var(--muted)]">Quadrado externo</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={cornerColor}
+                    onChange={(e) => setCornerColor(e.target.value)}
+                    className="h-8 w-8 cursor-pointer rounded border border-[var(--line)]"
+                  />
+                  <input
+                    type="text"
+                    value={cornerColor.replace('#', '')}
+                    onChange={(e) => {
+                      const v = e.target.value.replace('#', '');
+                      setCornerColor('#' + v);
+                    }}
+                    className="w-full rounded-md border border-[var(--line)] px-2 py-1.5 text-xs focus:ring-2 focus:ring-[var(--brand)] focus:outline-none"
+                    placeholder="000000"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] text-[var(--muted)]">Ponto interno</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    className="h-8 w-8 cursor-pointer rounded border border-[var(--line)]"
+                  />
+                  <input
+                    type="text"
+                    value={color.replace('#', '')}
+                    onChange={(e) => {
+                      const v = e.target.value.replace('#', '');
+                      setColor('#' + v);
+                    }}
+                    className="w-full rounded-md border border-[var(--line)] px-2 py-1.5 text-xs focus:ring-2 focus:ring-[var(--brand)] focus:outline-none"
+                    placeholder="000000"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Rodapé do painel: atualizar + baixar */}
+      <div className="mt-3 flex items-center justify-between gap-2 pt-2 border-t border-[var(--line)]">
+        <button
+          type="button"
+          onClick={regenerate}
+          disabled={loading}
+          className="flex-1 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium transition-colors hover:border-[var(--brand)] disabled:opacity-50"
+        >
+          {loading ? 'Atualizando…' : 'Aplicar estilo'}
+        </button>
+        <button
+          type="button"
+          onClick={() => {}}
+          disabled={!qrDataUrl || loading}
+          className="flex-1 rounded-md bg-[var(--brand)] px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--brand-strong)] disabled:opacity-50"
+        >
+          Baixar QR
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function GeneratorPage() {
   // `?tipo=` vem dos cards da landing; tipos prontos pulam direto ao passo 2.
   const [searchParams] = useSearchParams();
@@ -131,6 +388,14 @@ export default function GeneratorPage() {
   const [phone, setPhone] = useState('');
   const [message, setMessage] = useState('');
 
+  // Estilo (passo 3)
+  const [color, setColor] = useState('#111111');
+  const [qrShape, setQrShape] = useState<'square' | 'rounded' | 'circle'>('square');
+  const [cornerShape, setCornerShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>('square');
+  const [dotShape, setDotShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>('square');
+  const [cornerColorMode, setCornerColorMode] = useState<'igual' | 'personalizada'>('igual');
+  const [cornerColor, setCornerColor] = useState('#111111');
+
   // Estado do passo 3 (casca — painéis preenchidos nas fatias seguintes)
   const [level1Tab, setLevel1Tab] = useState<'custom' | 'brand' | 'ai'>('custom');
   const [level2Tab, setLevel2Tab] = useState<'geral' | 'personalizacao' | 'senha' | 'agendamento'>('personalizacao');
@@ -150,6 +415,53 @@ export default function GeneratorPage() {
     return url.length > 0;
   }, [payload, type, url, phone]);
 
+  const mapShape = (s: string): 'square' | 'rounded' | 'circle' => {
+    switch (s) {
+      case 'square':
+        return 'square';
+      case 'rounded':
+        return 'rounded';
+      case 'circle':
+        return 'circle';
+      default:
+        return 'rounded';
+    }
+  };
+
+  const _qrOptions = useMemo<Record<string, unknown>>(() => {
+    const dotsType = mapShape(qrShape);
+    const cornerType = mapShape(cornerShape);
+    const dotType = mapShape(dotShape);
+    const effectiveColor = cornerColorMode === 'personalizada' ? cornerColor : color;
+    const opts: Record<string, unknown> = {
+      width: 512,
+      height: 512,
+      type: 'canvas',
+      data: payload,
+      margin: 2,
+      qrOptions: { errorCorrectionLevel: 'Q' },
+      dotsOptions: { color, type: dotsType },
+      cornersSquareOptions: { color: effectiveColor, type: cornerType },
+      cornersDotOptions: { color: effectiveColor, type: dotType },
+      backgroundOptions: { color: '#ffffff' },
+    };
+    return opts;
+  }, [payload, color, qrShape, cornerShape, dotShape, cornerColorMode, cornerColor]);
+
+  const buildQrDataUrl = useCallback(async (): Promise<string | null> => {
+    if (!payload) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const instance = new QRCodeStyling(_qrOptions as any);
+    const blob = await instance.getRawData('png');
+    if (!(blob instanceof Blob)) return null;
+    const reader = new FileReader();
+    return new Promise<string | null>((resolve) => {
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  }, [_qrOptions, payload]);
+
   const generateQr = useCallback(async () => {
     if (!payload) {
       setError('Preencha o conteúdo do QR code antes de gerar.');
@@ -157,34 +469,15 @@ export default function GeneratorPage() {
     }
     setLoading(true);
     setError(null);
-    try {
-      const instance = new (await import('qr-code-styling')).default({
-        width: 512,
-        height: 512,
-        type: 'canvas',
-        data: payload,
-        margin: 2,
-        qrOptions: { errorCorrectionLevel: 'Q' },
-        dotsOptions: { color: '#111111', type: 'square' },
-        cornersSquareOptions: { color: '#111111', type: 'square' },
-        cornersDotOptions: { color: '#111111', type: 'square' },
-        backgroundOptions: { color: '#ffffff' },
-      });
-      const blob = await instance.getRawData('png');
-      if (!(blob instanceof Blob)) throw new Error('Falha ao gerar imagem');
-      const reader = new FileReader();
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(blob);
-      });
-      setQrDataUrl(dataUrl);
-    } catch {
+    const dataUrl = await buildQrDataUrl();
+    if (!dataUrl) {
       setError('Não foi possível gerar o QR code. Tente novamente.');
-    } finally {
       setLoading(false);
+      return;
     }
-  }, [payload]);
+    setQrDataUrl(dataUrl);
+    setLoading(false);
+  }, [payload, buildQrDataUrl]);
 
   const download = useCallback(() => {
     if (!qrDataUrl) return;
@@ -449,9 +742,49 @@ export default function GeneratorPage() {
               ))}
             </div>
 
-            {/* Conteúdo do nível 2 (placeholder até as fatias seguintes) */}
-            <div className="rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4 min-h-[300px]">
-              <p className="text-sm subtle">Conteúdo desta seção será preenchido na próxima fatia.</p>
+            {/* Conteúdo do nível 2 */}
+            <div className="space-y-4">
+              {level2Tab === 'personalizacao' && (
+                <PersonalizationPanel
+                  qrShape={qrShape}
+                  setQrShape={(s) => setQrShape(s as 'square' | 'rounded' | 'circle')}
+                  cornerShape={cornerShape}
+                  setCornerShape={(s) => setCornerShape(s as 'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded')}
+                  dotShape={dotShape}
+                  setDotShape={(s) => setDotShape(s as 'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded')}
+                  color={color}
+                  setColor={setColor}
+                  cornerColor={cornerColor}
+                  setCornerColor={setCornerColor}
+                  cornerColorMode={cornerColorMode}
+                  setCornerColorMode={(s) => setCornerColorMode(s as 'igual' | 'personalizada')}
+                  _qrOptions={_qrOptions}
+                  buildQrDataUrl={buildQrDataUrl}
+                  qrDataUrl={qrDataUrl}
+                  loading={loading}
+                />
+              )}
+              {level2Tab === 'geral' && (
+                <div className="rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4 min-h-[300px]">
+                  <p className="text-sm subtle">Geral será preenchido na próxima fatia.</p>
+                </div>
+              )}
+              {level2Tab === 'senha' && (
+                <div className="rounded-lg border border-[var(--line)] bg-[var(--brand-soft)] p-4 min-h-[300px]">
+                  <span className="inline-flex items-center gap-1 rounded border border-[var(--brand)] px-2 py-0.5 text-[var(--brand)] text-[10px]">
+                    Em breve
+                  </span>
+                  <p className="mt-1 text-sm text-[var(--muted)]">Proteção por senha chega em uma próxima versão.</p>
+                </div>
+              )}
+              {level2Tab === 'agendamento' && (
+                <div className="rounded-lg border border-[var(--line)] bg-[var(--brand-soft)] p-4 min-h-[300px]">
+                  <span className="inline-flex items-center gap-1 rounded border border-[var(--brand)] px-2 py-0.5 text-[var(--brand)] text-[10px]">
+                    Em breve
+                  </span>
+                  <p className="mt-1 text-sm text-[var(--muted)]">Agendamento chega em uma próxima versão.</p>
+                </div>
+              )}
             </div>
           </div>
 
