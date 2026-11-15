@@ -12,10 +12,10 @@ export const API_BASE_PATH = `${APP_BASE_PATH}/api`;
 /** Prefixo das URLs curtas codificadas nos QR codes. */
 export const SHORT_PATH_PREFIX = '/q';
 
-/** Domínio de produção (sem scheme). */
-export const PRODUCTION_HOST = 'yonkolab.xyz';
+/** Domínio de produção dos QR codes (sem scheme). */
+export const PRODUCTION_HOST = 'qr.yonkolab.xyz';
 
-/** Monta a URL curta de um código (ex.: https://yonkolab.xyz/q/ab3xk9m). */
+/** Monta a URL curta de um código (ex.: https://qr.yonkolab.xyz/q/ab3xk9m). */
 export function shortUrl(code: string): string {
   return `https://${PRODUCTION_HOST}${SHORT_PATH_PREFIX}/${code}`;
 }

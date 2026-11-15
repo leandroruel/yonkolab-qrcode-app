@@ -12,10 +12,13 @@
   "dependencies": {
     "@tanstack/react-query": "^5.107.1",
     "@yonkolab/shared": "workspace:*",
+    "lucide-react": "^1.73.0",
     "qr-code-styling": "^1.9.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-router-dom": "^7.18.5"
+    "react-hook-form": "^7.92.0",
+    "react-router-dom": "^7.18.5",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",

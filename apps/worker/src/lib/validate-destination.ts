@@ -1,19 +1,15 @@
 /**
  * Validação de destino para URLs de QR code (M2).
- * 
+ *
  * Regras (plano seção 7/M2):
  * - Só http/https
- - ≤ 2048 chars
- - Bloquear localhost, IPs privados, link-local, próprio host yonkolab.xyz
+ * - ≤ 2048 chars
+ * - Bloquear localhost, IPs privados, link-local, próprio host
  */
 
-const encoder = new TextEncoder();
-
-/** Regex para validar hostname (aceita domínio e IP). */
-const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
-
 /** Regex para IPv4. */
-const ipv4Regex = /^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+const ipv4Regex =
+  /^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
 /** Regex para IPv6 (simplificado). */
 const ipv6Regex = /^([0-9a-fA-F]{0,4}:){2,}[0-9a-fA-F]{0,4}$/;
 
@@ -49,23 +45,32 @@ function isLocalhost(host: string): boolean {
   return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1';
 }
 
-/** Verifica se o hostname é do próprio serviço (yonkolab.xyz). */
-function isOwnHost(host: string): boolean {
-  return normalizeHostname(host) === 'yonkolab.xyz' || normalizeHostname(host) === 'yonkolab.xyz/qrcode';
+/**
+ * Verifica se o hostname pertence ao próprio serviço (evita QR circular).
+ * Bloqueia o host exato e qualquer subdomínio do domínio raiz informado.
+ */
+function isOwnHost(host: string, ownHost: string): boolean {
+  const normalized = normalizeHostname(host);
+  const own = normalizeHostname(ownHost).split('/')[0] ?? '';
+  if (normalized === own) return true;
+
+  // Domínio raiz (últimos dois rótulos): yonkolab.xyz.
+  const labels = own.split('.');
+  const root = labels.slice(-2).join('.');
+  return root.includes('.') && (normalized === root || normalized.endsWith(`.${root}`));
 }
 
 /**
  * Valida se o destino é permitido.
- * - Apenas http/https
- - Tamanho ≤ 2048
- - Bloqueia localhost, IPs privados, link-local, próprio host
- - Retorna motivo da rejeição
+ * Retorna o motivo da rejeição, se houver.
  */
 export async function validateDestination(
   db: D1Database,
   destination: string,
-  ownHost: string
+  ownHost: string,
 ): Promise<{ valid: boolean; reason?: string }> {
+  void db; // assinatura mantém espaço para checagem de blocked_hosts (M6).
+
   // 1. Tamanho
   if (destination.length > 2048) {
     return { valid: false, reason: 'Destination exceeds maximum length of 2048 characters' };
@@ -78,37 +83,26 @@ export async function validateDestination(
     }
     const host = url.hostname;
 
-    // 2. Bloquear localhost
+    // 2. Bloquear localhost e IPs privados/link-local
     if (isLocalhost(host)) {
       return { valid: false, reason: 'Localhost addresses are not allowed' };
     }
-
-    // 3. Bloquear IPs privados (v4)
-    if (isPrivateIPv4(host)) {
+    if (isIPHost(host) && (isPrivateIPv4(host) || isLinkLocalIPv6(host))) {
       return { valid: false, reason: 'Private IP addresses are not allowed' };
     }
 
-    // 4. Bloquear link-local (v6)
+    // 3. Bloquear link-local (v6)
     if (isLinkLocalIPv6(host)) {
       return { valid: false, reason: 'Link-local IPv6 addresses are not allowed' };
     }
 
-    // 5. Bloquear próprio host (yonkolab.xyz)
-    if (isOwnHost(host)) {
+    // 4. Bloquear próprio host
+    if (isOwnHost(host, ownHost)) {
       return { valid: false, reason: 'Destination cannot be the same as the service host' };
     }
 
     return { valid: true };
   } catch {
     return { valid: false, reason: 'Invalid URL format' };
-  }
-}
-
-/** Tipo para o banco de dados D1. */
-declare global {
-  namespace NodeJS {
-    interface D1Database {
-      exec(sql: string, ...args: unknown[]): Promise<unknown[]>;
-    }
   }
 }

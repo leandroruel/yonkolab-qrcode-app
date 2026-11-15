@@ -1,133 +1,241 @@
+import {
+  MAX_DESTINATION_LENGTH,
+  MAX_QRS_PER_USER,
+  QR_CODE_ALPHABET,
+  QR_CODE_LENGTH,
+} from '@yonkolab/shared';
+import { and, desc, eq } from 'drizzle-orm';
+import { getCookie } from 'hono/cookie';
 import { Hono } from 'hono';
-import type { AppEnv } from '../types';
-import { API_BASE_PATH, SHORT_PATH_PREFIX, QR_CODE_ALPHABET, QR_CODE_LENGTH, MAX_QRS_PER_USER, MAX_DESTINATION_LENGTH } from '@yonkolab/shared';
+import type { Context } from 'hono';
+import { createDb } from '../db/client';
+import type { Db } from '../db/client';
+import { qrCodes, users } from '../db/schema';
+import { getSessionUser, SESSION_COOKIE } from '../lib/session';
 import { validateDestination } from '../lib/validate-destination';
+import type { AppEnv, User } from '../types';
 
-const router = new Hono<AppEnv>();
+/**
+ * CRUD de QR dinâmico — /qrcode/api/v1/qr
+ *
+ * Usuário logado (sessão) usa a própria conta; sem sessão, o QR é criado na
+ * conta anônima compartilhada (o produto permite gerar sem cadastro).
+ * Toda a escrita passa por Drizzle com parâmetros vinculados (sem SQL concatenado).
+ */
 
-/** GET /qrcode/api/v1/qr - List user's QR codes (paginated) */
-router.get('/', async (c) => {
-  const user = c.get('user') as unknown as { id: string };
+const ANONYMOUS_USER_ID = 'anonymous';
 
-  const page = parseInt(c.req.query('page') || '1');
-  const limit = parseInt(c.req.query('limit') || '20');
-  const offset = (page - 1) * limit;
+export const qrApp = new Hono<AppEnv>();
 
-  const db: any = c.env.DB;
+/** Gera um código curto único (7 chars do alfabeto sem ambíguos). */
+function randomCode(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(QR_CODE_LENGTH));
+  let out = '';
+  for (let i = 0; i < QR_CODE_LENGTH; i++) {
+    out += QR_CODE_ALPHABET[(bytes[i] ?? 0) % QR_CODE_ALPHABET.length];
+  }
+  return out;
+}
 
-  const [rows] = await db.exec(`SELECT id, code, name, destination, status, starts_at, expires_at, created_at FROM qr_codes WHERE user_id = ${user.id} ORDER BY created_at LIMIT ${limit} OFFSET ${offset}`) as any[];
+/** Resolve o dono do QR: sessão válida ou a conta anônima compartilhada. */
+async function resolveOwner(
+  c: Context<AppEnv>,
+): Promise<{ db: Db; user: User; anonymous: boolean }> {
+  const db = createDb(c.env.DB);
+  const token = getCookie(c, SESSION_COOKIE);
+  if (token) {
+    const user = await getSessionUser(db, token);
+    if (user) return { db, user, anonymous: false };
+  }
 
-  const [[{ count = 0 }]] = await db.exec(`SELECT COUNT(*) as count FROM qr_codes WHERE user_id = ${user.id}`) as any;
+  await db
+    .insert(users)
+    .values({
+      id: ANONYMOUS_USER_ID,
+      email: 'anonimo@qr.yonkolab.xyz',
+      name: 'Anônimo',
+      googleSub: 'anonymous',
+      isAdmin: false,
+      createdAt: Date.now(),
+    })
+    .onConflictDoNothing();
+
+  const [user] = await db.select().from(users).where(eq(users.id, ANONYMOUS_USER_ID)).limit(1);
+  if (!user) {
+    throw new Error('Não foi possível resolver o usuário anônimo.');
+  }
+  return { db, user, anonymous: true };
+}
+
+function shortUrlFor(c: Context<AppEnv>, code: string): string {
+  return `${new URL(c.req.url).origin}/q/${code}`;
+}
+
+/** GET /qrcode/api/v1/qr — lista os QR codes do usuário atual. */
+qrApp.get('/', async (c) => {
+  const { db, user } = await resolveOwner(c);
+  const page = Math.max(1, Number.parseInt(c.req.query('page') ?? '1', 10) || 1);
+  const limit = Math.min(100, Math.max(1, Number.parseInt(c.req.query('limit') ?? '20', 10) || 20));
+
+  const rows = await db
+    .select()
+    .from(qrCodes)
+    .where(eq(qrCodes.userId, user.id))
+    .orderBy(desc(qrCodes.createdAt))
+    .limit(limit)
+    .offset((page - 1) * limit);
+
+  const all = await db.select({ id: qrCodes.id }).from(qrCodes).where(eq(qrCodes.userId, user.id));
+  const total = all.length;
 
   return c.json({
-    data: rows,
-    total: count,
+    data: rows.map((row) => ({ ...row, shortUrl: shortUrlFor(c, row.code) })),
+    total,
     page,
-    lastPage: Math.ceil(count / limit),
+    lastPage: Math.max(1, Math.ceil(total / limit)),
   });
 });
 
-/** POST /qrcode/api/v1/qr - Create new QR code */
-router.post('/', async (c) => {
-  const user = c.get('user') as unknown as { id: string };
-  const body = await c.req.json<{ name: string; destination: string; status?: string; starts_at?: number; expires_at?: number }>();
+/** POST /qrcode/api/v1/qr — cria um QR code dinâmico. */
+qrApp.post('/', async (c) => {
+  const { db, user, anonymous } = await resolveOwner(c);
 
-  if (!body.name || body.name.trim().length === 0) {
-    return c.json({ error: 'Name is required' }, 400);
+  const body = await c.req.json<{ name?: string; destination?: string }>().catch(() => null);
+  const name = body?.name?.trim();
+  const destination = body?.destination?.trim();
+
+  if (!name) return c.json({ error: 'Informe um nome para o QR code.' }, 400);
+  if (name.length > 80) return c.json({ error: 'O nome deve ter no máximo 80 caracteres.' }, 400);
+  if (!destination) return c.json({ error: 'Informe o destino (URL).' }, 400);
+  if (destination.length > MAX_DESTINATION_LENGTH) {
+    return c.json(
+      { error: `O destino deve ter no máximo ${MAX_DESTINATION_LENGTH} caracteres.` },
+      422,
+    );
   }
 
-  const destValidation = await validateDestination(c.env.DB, body.destination, 'yonkolab.xyz');
-  if (!destValidation.valid) {
-    return c.json({ error: destValidation.reason }, 422);
+  const validation = await validateDestination(c.env.DB, destination, 'qr.yonkolab.xyz');
+  if (!validation.valid) {
+    return c.json({ error: validation.reason ?? 'Destino inválido.' }, 422);
   }
 
-  const row: any = await c.env.DB.exec(`SELECT COUNT(*) as count FROM qr_codes WHERE user_id = ${user.id}`) as any;
-  const count: number = row[0] != null ? Number(row[0].count) : 0;
-
-  if (count >= MAX_QRS_PER_USER) {
-    return c.json({ error: `Maximum of ${MAX_QRS_PER_USER} dynamic QR codes per user` }, 403);
-  }
-
-  const alphabet = QR_CODE_ALPHABET;
-  const length = QR_CODE_LENGTH;
-  let code: string = '';
-  let codeExists = true;
-
-  while (codeExists) {
-    code = '';
-    for (let i = 0; i < length; i++) {
-      const randomIndex = crypto.getRandomValues(new Uint8Array(1))[0] % alphabet.length;
-      code += alphabet[randomIndex];
+  if (!anonymous) {
+    const own = await db
+      .select({ id: qrCodes.id })
+      .from(qrCodes)
+      .where(eq(qrCodes.userId, user.id));
+    if (own.length >= MAX_QRS_PER_USER) {
+      return c.json({ error: `Limite de ${MAX_QRS_PER_USER} QR codes dinâmicos por conta.` }, 403);
     }
-    const [[{ id = undefined }]] = await c.env.DB.exec(`SELECT id FROM qr_codes WHERE code = ${code}`) as any;
-    codeExists = id !== undefined;
+  }
+
+  let code = '';
+  for (let attempt = 0; attempt < 10 && !code; attempt++) {
+    const candidate = randomCode();
+    const [existing] = await db
+      .select({ id: qrCodes.id })
+      .from(qrCodes)
+      .where(eq(qrCodes.code, candidate))
+      .limit(1);
+    if (!existing) code = candidate;
+  }
+  if (!code) {
+    return c.json({ error: 'Não foi possível gerar um código único. Tente novamente.' }, 500);
   }
 
   const now = Date.now();
-  const startsAt = body.starts_at ?? null;
-  const expires_at = body.expires_at ?? null;
-  const status = body.status ?? 'active';
+  const [created] = await db
+    .insert(qrCodes)
+    .values({
+      id: crypto.randomUUID(),
+      userId: user.id,
+      code,
+      name,
+      destination,
+      status: 'active',
+      startsAt: null,
+      expiresAt: null,
+      style: '{}',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
 
-  const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => c === 'x' ? (Math.random() * 16 | 0).toString(16) : (c & 0x3 | 0x8).toString(16));
+  if (!created) return c.json({ error: 'Não foi possível criar o QR code.' }, 500);
 
-  await c.env.DB.exec(`INSERT INTO qr_codes (id, user_id, code, name, destination, status, starts_at, expires_at, style, created_at, updated_at) VALUES ('${uuid}', ${user.id}, ${code}, '${body.name.trim()}', ${body.destination}, ${status}, ${startsAt}, ${expires_at}, '{}', ${now}, ${now}`);
-
-  const [[created]] = await c.env.DB.exec(`SELECT id, code, name, destination, status, starts_at, expires_at FROM qr_codes WHERE code = ${code}`) as any;
-
-  return c.json({ data: created }, 201);
+  return c.json({ data: { ...created, shortUrl: shortUrlFor(c, created.code) } }, 201);
 });
 
-/** GET /qrcode/api/v1/qr/:id - Get single QR code */
-router.get('/:id', async (c) => {
-  const user = c.get('user') as unknown as { id: string };
+/** GET /qrcode/api/v1/qr/:id — detalhe de um QR code. */
+qrApp.get('/:id', async (c) => {
+  const { db, user } = await resolveOwner(c);
+  const [qr] = await db
+    .select()
+    .from(qrCodes)
+    .where(and(eq(qrCodes.id, c.req.param('id')), eq(qrCodes.userId, user.id)))
+    .limit(1);
 
-  const [[qr]] = await c.env.DB.exec(`SELECT id, code, name, destination, status, starts_at, expires_at, style, created_at, updated_at FROM qr_codes WHERE id = ${c.req.param('id')} AND user_id = ${user.id}`) as any;
-
-  if (!qr) {
-    return c.json({ error: 'QR code not found' }, 404);
-  }
-
-  return c.json({ data: qr });
+  if (!qr) return c.json({ error: 'QR code não encontrado.' }, 404);
+  return c.json({ data: { ...qr, shortUrl: shortUrlFor(c, qr.code) } });
 });
 
-/** PATCH /qrcode/api/v1/qr/:id - Update QR code */
-router.patch('/:id', async (c) => {
-  const user = c.get('user') as unknown as { id: string };
-  const body = await c.req.json<{ name?: string; destination?: string; status?: string; starts_at?: number; expires_at?: number }>();
+/** PATCH /qrcode/api/v1/qr/:id — atualiza nome/destino/status. */
+qrApp.patch('/:id', async (c) => {
+  const { db, user } = await resolveOwner(c);
+  const id = c.req.param('id');
 
-  const [[existing]] = await c.env.DB.exec(`SELECT id, destination FROM qr_codes WHERE id = ${c.req.param('id')} AND user_id = ${user.id}`) as any;
+  const [existing] = await db
+    .select()
+    .from(qrCodes)
+    .where(and(eq(qrCodes.id, id), eq(qrCodes.userId, user.id)))
+    .limit(1);
+  if (!existing) return c.json({ error: 'QR code não encontrado.' }, 404);
 
-  if (!existing) {
-    return c.json({ error: 'QR code not found' }, 404);
-  }
+  const body = await c.req
+    .json<{ name?: string; destination?: string; status?: 'active' | 'paused' | 'expired' }>()
+    .catch(() => null);
 
-  if (body.destination && body.destination !== existing.destination) {
-    const destValidation = await validateDestination(c.env.DB, body.destination, 'yonkolab.xyz');
-    if (!destValidation.valid) {
-      return c.json({ error: destValidation.reason }, 422);
+  const name = body?.name?.trim() ?? existing.name;
+  const destination = body?.destination?.trim() ?? existing.destination;
+  const status = body?.status ?? existing.status;
+
+  if (!name) return c.json({ error: 'Informe um nome para o QR code.' }, 400);
+  if (name.length > 80) return c.json({ error: 'O nome deve ter no máximo 80 caracteres.' }, 400);
+
+  if (destination !== existing.destination) {
+    if (destination.length > MAX_DESTINATION_LENGTH) {
+      return c.json(
+        { error: `O destino deve ter no máximo ${MAX_DESTINATION_LENGTH} caracteres.` },
+        422,
+      );
+    }
+    const validation = await validateDestination(c.env.DB, destination, 'qr.yonkolab.xyz');
+    if (!validation.valid) {
+      return c.json({ error: validation.reason ?? 'Destino inválido.' }, 422);
     }
   }
 
-  await c.env.DB.exec(`UPDATE qr_codes SET name = '${body.name?.trim() ?? existing.name}', destination = ${body.destination ?? JSON.stringify(existing.destination)}, status = ${body.status ?? existing.status}, starts_at = ${body.starts_at ?? existing.starts_at}, expires_at = ${body.expires_at ?? existing.expires_at}, updated_at = ${Date.now()} WHERE id = ${c.req.param('id')} AND user_id = ${user.id}`);
-
-  const [[updated]] = await c.env.DB.exec(`SELECT id, code, name, destination, status, starts_at, expires_at FROM qr_codes WHERE id = ${c.req.param('id')} AND user_id = ${user.id}`) as any;
-
-  return c.json({ data: updated });
-});
-
-/** DELETE /qrcode/api/v1/qr/:id - Delete QR code */
-router.delete('/:id', async (c) => {
-  const user = c.get('user') as unknown as { id: string };
-
-  const [[existing]] = await c.env.DB.exec(`SELECT id FROM qr_codes WHERE id = ${c.req.param('id')} AND user_id = ${user.id}`) as any;
-
-  if (!existing) {
-    return c.json({ error: 'QR code not found' }, 404);
+  if (!['active', 'paused', 'expired'].includes(status)) {
+    return c.json({ error: 'Status inválido.' }, 400);
   }
 
-  await c.env.DB.exec(`DELETE FROM qr_codes WHERE id = ${c.req.param('id')} AND user_id = ${user.id}`);
+  const [updated] = await db
+    .update(qrCodes)
+    .set({ name, destination, status, updatedAt: Date.now() })
+    .where(and(eq(qrCodes.id, id), eq(qrCodes.userId, user.id)))
+    .returning();
 
-  return c.json({ success: true });
+  return c.json({ data: updated ? { ...updated, shortUrl: shortUrlFor(c, updated.code) } : null });
 });
 
-export const qrApp = router;
+/** DELETE /qrcode/api/v1/qr/:id — remove um QR code. */
+qrApp.delete('/:id', async (c) => {
+  const { db, user } = await resolveOwner(c);
+  const [deleted] = await db
+    .delete(qrCodes)
+    .where(and(eq(qrCodes.id, c.req.param('id')), eq(qrCodes.userId, user.id)))
+    .returning({ id: qrCodes.id });
+
+  if (!deleted) return c.json({ error: 'QR code não encontrado.' }, 404);
+  return c.json({ success: true });
+});

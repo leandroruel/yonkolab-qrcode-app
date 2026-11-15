@@ -3,6 +3,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import App from './App';
+import CreatePage from './pages/CreatePage';
+import GeneratorPage from './pages/GeneratorPage';
 import HomePage from './pages/HomePage';
 import './index.css';
 
@@ -14,7 +16,11 @@ const router = createBrowserRouter(
     {
       path: '/',
       element: <App />,
-      children: [{ index: true, element: <HomePage /> }],
+      children: [
+        { index: true, element: <HomePage /> },
+        { path: 'generator', element: <GeneratorPage /> },
+        { path: 'create', element: <CreatePage /> },
+      ],
     },
   ],
   { basename: APP_BASE_PATH },
