@@ -3,41 +3,116 @@ import {
   ArrowLeft,
   ArrowRight,
   Copy,
+  CreditCard,
   Download,
   Eye,
-  Link2,
+  Globe,
   Loader2,
-  MessageCircle,
+  Mail,
+  Smartphone,
+  Text,
+  User,
+  Wifi,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
-type QrType = 'site' | 'whatsapp';
+type QrType =
+  | 'site'
+  | 'whatsapp'
+  | 'vcard'
+  | 'pix'
+  | 'texto'
+  | 'wifi'
+  | 'email';
 
 const STEPS = ['Tipo', 'Conteúdo', 'Personalizar'] as const;
 const DRAFT_KEY = 'yonkolab:qr-draft';
 
 /** Tipos que o gerador já entrega conteúdo neste passo da entrega. */
-const READY_TYPES = new Set<string>(['site', 'whatsapp']);
+const READY_TYPES = new Set<QrType>(['site', 'whatsapp']);
 
-const TYPE_LABELS: Record<string, string> = {
-  site: 'Site',
+const TYPE_LABELS: Record<QrType, string> = {
+  site: 'Site / URL',
   whatsapp: 'WhatsApp',
   vcard: 'vCard',
   pix: 'PIX',
   texto: 'Texto',
   wifi: 'Wi-Fi',
-  email: 'Email',
+  email: 'E-mail',
 };
+
+type TypeCard = {
+  type: QrType;
+  label: string;
+  sublabel: string;
+  ready: boolean;
+  icon: React.ElementType;
+};
+
+const TYPE_CARDS: TypeCard[] = [
+  {
+    type: 'site',
+    label: TYPE_LABELS.site,
+    sublabel: 'Abra um link ao escanear',
+    ready: true,
+    icon: Globe,
+  },
+  {
+    type: 'whatsapp',
+    label: TYPE_LABELS.whatsapp,
+    sublabel: 'Inicie uma conversa',
+    ready: true,
+    icon: Smartphone,
+  },
+  {
+    type: 'vcard',
+    label: TYPE_LABELS.vcard,
+    sublabel: 'Salve um contato na agenda',
+    ready: false,
+    icon: User,
+  },
+  {
+    type: 'pix',
+    label: TYPE_LABELS.pix,
+    sublabel: 'Pague com chave Pix',
+    ready: false,
+    icon: CreditCard,
+  },
+  {
+    type: 'texto',
+    label: TYPE_LABELS.texto,
+    sublabel: 'Mostre qualquer texto curto',
+    ready: false,
+    icon: Text,
+  },
+  {
+    type: 'wifi',
+    label: TYPE_LABELS.wifi,
+    sublabel: 'Conecte à rede Wi-Fi',
+    ready: false,
+    icon: Wifi,
+  },
+  {
+    type: 'email',
+    label: TYPE_LABELS.email,
+    sublabel: 'Abra um e-mail pronto',
+    ready: false,
+    icon: Mail,
+  },
+];
 
 export default function GeneratorPage() {
   // `?tipo=` vem dos cards da landing; tipos prontos pulam direto ao passo 2.
   const [searchParams] = useSearchParams();
   const tipoParam = searchParams.get('tipo');
-  const tipoValido = tipoParam !== null && READY_TYPES.has(tipoParam);
+  const tipoValido =
+    tipoParam !== null && READY_TYPES.has(tipoParam as QrType);
   const passoParam = searchParams.get('passo');
 
-  const [type, setType] = useState<QrType>(tipoParam === 'whatsapp' ? 'whatsapp' : 'site');
+  const [type, setType] = useState<QrType>(
+    (tipoParam ?? 'site') === 'whatsapp' ? 'whatsapp' : 'site',
+  );
   const [step, setStep] = useState(() => {
     const parsed = passoParam ? Number(passoParam) : NaN;
     if (Number.isFinite(parsed)) return Math.min(Math.max(Math.trunc(parsed), 1), 2);
@@ -117,7 +192,7 @@ export default function GeneratorPage() {
     } finally {
       setLoading(false);
     }
-  }, [payload, margin, color, bgColor]);
+  }, [payload, margin, color, bgColor, setStep]);
 
   const download = useCallback(() => {
     if (!qrDataUrl) return;
@@ -171,42 +246,42 @@ export default function GeneratorPage() {
       {/* Passo 1: tipo */}
       {step === 1 && (
         <div className="space-y-3">
-          {tipoParam && !tipoValido && (
+          {tipoParam && !READY_TYPES.has(tipoParam as QrType) && (
             <p className="rounded-xl border border-[var(--line)] bg-[var(--brand-soft)] p-3 text-sm">
-              O tipo <strong>{TYPE_LABELS[tipoParam] ?? tipoParam}</strong> chega nas próximas
-              etapas. Por enquanto, geramos QR de Site e WhatsApp por aqui.
+              O tipo <strong>{TYPE_LABELS[tipoParam as QrType] ?? tipoParam}</strong> chega nas
+              próximas etapas. Por enquanto, geramos QR de Site e WhatsApp por aqui.
             </p>
           )}
-          <div className="grid gap-3 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => {
-              setType('site');
-              setStep(2);
-            }}
-            className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4 text-left transition-colors hover:border-[var(--brand)]"
-          >
-            <Link2 className="h-5 w-5" />
-            <span>
-              <span className="block font-medium">Site / URL</span>
-              <span className="block text-sm subtle">Abra um link ao escanear</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setType('whatsapp');
-              setStep(2);
-            }}
-            className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4 text-left transition-colors hover:border-[var(--brand)]"
-          >
-            <MessageCircle className="h-5 w-5" />
-            <span>
-              <span className="block font-medium">WhatsApp</span>
-              <span className="block text-sm subtle">Inicie uma conversa</span>
-            </span>
-          </button>
-        </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {TYPE_CARDS.map((card) => (
+              <button
+                key={card.type}
+                type="button"
+                disabled={!card.ready}
+                onClick={() => {
+                  if (!card.ready) return;
+                  setType(card.type);
+                  setStep(2);
+                }}
+                className={`flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors ${
+                  card.ready
+                    ? 'border-[var(--line)] bg-[var(--elevated)] hover:border-[var(--brand)]'
+                    : 'border-[var(--line)]/40 bg-[var(--surface)]/50 opacity-70 cursor-not-allowed'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <card.icon className="h-5 w-5 shrink-0" />
+                  <span className="font-medium text-[var(--fg)]">{card.label}</span>
+                </div>
+                <span className="text-sm subtle">{card.sublabel}</span>
+                {!card.ready && (
+                  <span className="mt-1 inline-flex items-center gap-1 text-xs text-[var(--brand)]">
+                    Em breve
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
