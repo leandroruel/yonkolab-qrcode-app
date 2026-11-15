@@ -2,12 +2,15 @@ import QRCodeStyling from 'qr-code-styling';
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronDown,
+  Copy,
   Download,
   Eye,
   Globe,
   Loader2,
   Mail,
   MessageCircle,
+  Share,
   Smartphone,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -388,6 +391,7 @@ export default function GeneratorPage() {
   const [logoMode, setLogoMode] = useState<'nenhum' | 'enviar'>('nenhum');
   const [logoImage, setLogoImage] = useState<string | null>(null);
   const [logoSize, setLogoSize] = useState(20);
+  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const [qrShape, setQrShape] = useState<'square' | 'rounded' | 'circle'>('square');
   const [cornerShape, setCornerShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>('square');
   const [dotShape, setDotShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>('square');
@@ -484,13 +488,48 @@ export default function GeneratorPage() {
     setLoading(false);
   }, [payload, buildQrDataUrl, setQrDataUrl]);
 
-  const download = useCallback(() => {
+  const downloadQR = useCallback(
+    async (format: 'png' | 'jpg' | 'svg', size: number) => {
+      if (!payload) return;
+      setLoading(true);
+      try {
+        const instance = new QRCodeStyling({
+          ...(_qrOptions as Record<string, unknown>),
+          width: size,
+          height: size,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any);
+        let blob: Blob;
+        if (format === 'svg') {
+          const svg = (await instance.getRawData('svg')) as string;
+          blob = new Blob([svg], { type: 'image/svg+xml' });
+        } else {
+          const type = format === 'jpg' ? 'jpeg' : 'png';
+          blob = (await instance.getRawData(type)) as Blob;
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `qr-${type}-${Date.now()}.${format}`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch {
+        setError('Não foi possível baixar o QR code. Tente novamente.');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [payload, _qrOptions, setError, setLoading, type],
+  );
+
+  const copyQR = useCallback(async () => {
     if (!qrDataUrl) return;
-    const a = document.createElement('a');
-    a.href = qrDataUrl;
-    a.download = `qr-${type}-${Date.now()}.png`;
-    a.click();
-  }, [qrDataUrl, type]);
+    try {
+      await navigator.clipboard.writeText(qrDataUrl);
+    } catch {
+      setError('Não foi possível copiar a imagem.');
+    }
+  }, [qrDataUrl, setError]);
 
   return (
     <div className="space-y-6">
@@ -967,14 +1006,84 @@ export default function GeneratorPage() {
         </button>
         <button
           type="button"
-          onClick={download}
-          disabled={!qrDataUrl || !contentValid}
+          onClick={() => void downloadQR('png', 512)}
+          disabled={!qrDataUrl || !contentValid || loading}
           className="inline-flex items-center justify-center gap-2 rounded-md bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--brand-strong)] disabled:opacity-50"
         >
           {loading && <Loader2 className="h-4 w-4 animate-spin" />}
           {loading ? 'Gerando…' : 'Baixar QR'}
           {!loading && <Download className="h-4 w-4" />}
         </button>
+        <button
+          type="button"
+          onClick={() => setDownloadMenuOpen(!downloadMenuOpen)}
+          disabled={!qrDataUrl || !contentValid || loading}
+          className="rounded-md bg-[var(--brand)] px-2 py-2 transition-colors hover:bg-[var(--brand-strong)] disabled:opacity-50"
+          aria-label="Opções de download"
+        >
+          <ChevronDown className="h-4 w-4 text-white" />
+        </button>
+        {downloadMenuOpen && (
+          <div className="absolute bottom-[60px] right-0 w-48 rounded-md border border-[var(--line)] bg-[var(--elevated)] shadow-lg py-2 z-10">
+            <div className="px-3 py-2 text-xs font-semibold text-[var(--muted)] uppercase">Formato</div>
+            <button
+              type="button"
+              onClick={() => { void downloadQR('png', 512); setDownloadMenuOpen(false); }}
+              className="w-full text-left px-3 py-2 text-sm text-[var(--fg)] hover:bg-[var(--surface)]"
+            >
+              PNG (512 px)
+            </button>
+            <button
+              type="button"
+              onClick={() => { void downloadQR('png', 1024); setDownloadMenuOpen(false); }}
+              className="w-full text-left px-3 py-2 text-sm text-[var(--fg)] hover:bg-[var(--surface)]"
+            >
+              PNG (1024 px)
+            </button>
+            <button
+              type="button"
+              onClick={() => { void downloadQR('png', 2048); setDownloadMenuOpen(false); }}
+              className="w-full text-left px-3 py-2 text-sm text-[var(--fg)] hover:bg-[var(--surface)]"
+            >
+              PNG (2048 px)
+            </button>
+            <button
+              type="button"
+              onClick={() => { void downloadQR('jpg', 1024); setDownloadMenuOpen(false); }}
+              className="w-full text-left px-3 py-2 text-sm text-[var(--fg)] hover:bg-[var(--surface)]"
+            >
+              JPG (1024 px)
+            </button>
+            <button
+              type="button"
+              onClick={() => { void downloadQR('svg', 1024); setDownloadMenuOpen(false); }}
+              className="w-full text-left px-3 py-2 text-sm text-[var(--fg)] hover:bg-[var(--surface)]"
+            >
+              SVG
+            </button>
+            <div className="h-px mx-3 my-1 bg-[var(--line)]" />
+            <div className="px-3 py-2 text-xs font-semibold text-[var(--muted)] uppercase">Mais</div>
+            <button
+              type="button"
+              onClick={() => { void copyQR(); setDownloadMenuOpen(false); }}
+              className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-[var(--fg)] hover:bg-[var(--surface)]"
+            >
+              <Copy className="h-4 w-4" /> Copiar imagem
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (navigator.share) {
+                  void navigator.share({ files: [new File([qrDataUrl ?? ''], 'qr.png')] });
+                }
+                setDownloadMenuOpen(false);
+              }}
+              className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-[var(--fg)] hover:bg-[var(--surface)]"
+            >
+              <Share className="h-4 w-4" /> Compartilhar
+            </button>
+          </div>
+        )}
       </div>
 
       <p className="text-sm subtle">
