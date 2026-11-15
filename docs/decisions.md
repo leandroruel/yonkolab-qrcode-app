@@ -77,3 +77,13 @@ custaria dependência e JS sem ganho real num FAQ de cinco itens.
 **Consequências:** zero dependência nova; se o produto evoluir para componentes complexos
 (dialog, combobox), aí sim avaliamos Radix/shadcn por componente.
 
+## D9 — Proxy de dev ancorado em `/q/`, não em `/q` (fatia 0)
+
+**Contexto:** o proxy do Vite usava a chave `/q`, que também casa com `/qrcode/...`. Em
+desenvolvimento, a SPA era encaminhada ao Wrangler e recebia o `dist` antigo; ao reconstruir,
+o HTML em cache apontava para chunks removidos (`Failed to fetch dynamically imported module`).
+**Decisão:** proxy `'^/q/'` (regex, conforme o Vite) para o redirector e `/qrcode/api` para a API.
+**Consequências:** `vite dev` serve o fonte da SPA. Como defesa extra, chunks usam
+`lazyWithRetry` (recarrega uma vez por 10 s) e o roteador tem `errorElement` com botão de recarga.
+
+
