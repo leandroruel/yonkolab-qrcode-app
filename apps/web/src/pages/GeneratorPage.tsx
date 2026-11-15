@@ -392,6 +392,9 @@ export default function GeneratorPage() {
   const [color, setColor] = useState('#111111');
   const [bgColor, setBgColor] = useState('#ffffff');
   const [margin, setMargin] = useState(2);
+  const [logoMode, setLogoMode] = useState<'nenhum' | 'enviar'>('nenhum');
+  const [logoImage, setLogoImage] = useState<string | null>(null);
+  const [logoSize, setLogoSize] = useState(20);
   const [qrShape, setQrShape] = useState<'square' | 'rounded' | 'circle'>('square');
   const [cornerShape, setCornerShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>('square');
   const [dotShape, setDotShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>('square');
@@ -447,8 +450,15 @@ export default function GeneratorPage() {
       cornersDotOptions: { color: effectiveColor, type: dotType },
       backgroundOptions: { color: bgColor },
     };
+    if (logoMode === 'enviar' && logoImage) {
+      opts.imageOptions = {
+        image: logoImage,
+        size: logoSize / 100,
+        margin: 2,
+      };
+    }
     return opts;
-  }, [payload, margin, color, bgColor, qrShape, cornerShape, dotShape, cornerColorMode, cornerColor]);
+  }, [payload, margin, color, bgColor, logoMode, logoImage, logoSize, qrShape, cornerShape, dotShape, cornerColorMode, cornerColor]);
 
   const buildQrDataUrl = useCallback(async (): Promise<string | null> => {
     if (!payload) return null;
@@ -831,6 +841,80 @@ export default function GeneratorPage() {
                         />
                         <span className="text-xs text-[var(--muted)]">{margin}</span>
                       </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="mb-1 block text-xs font-medium text-[var(--fg)]">Logotipo</label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setLogoMode('nenhum')}
+                          className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+                            logoMode === 'nenhum'
+                              ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]'
+                              : 'border-[var(--line)] bg-[var(--elevated)] text-[var(--fg)] hover:border-[var(--brand)]'
+                          }`}
+                        >
+                          Nenhum
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLogoMode('enviar')}
+                          className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+                            logoMode === 'enviar'
+                              ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]'
+                              : 'border-[var(--line)] bg-[var(--elevated)] text-[var(--fg)] hover:border-[var(--brand)]'
+                          }`}
+                        >
+                          Enviar logo
+                        </button>
+                      </div>
+                      {logoMode === 'enviar' && (
+                        <div className="space-y-2 mt-2">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                const result = ev.target?.result;
+                                if (typeof result === 'string') setLogoImage(result);
+                              };
+                              reader.readAsDataURL(file);
+                            }}
+                            className="w-full rounded-md border border-[var(--line)] px-3 py-2 text-xs focus:ring-2 focus:ring-[var(--brand)] focus:outline-none"
+                          />
+                          {logoImage && (
+                            <div className="flex items-center gap-2">
+                              <img src={logoImage} alt="Logo" className="h-8 w-8 rounded object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => setLogoImage(null)}
+                                className="text-xs subtle hover:text-[var(--fg)]"
+                              >
+                                Remover
+                              </button>
+                            </div>
+                          )}
+                          <div>
+                            <label className="mb-1 block text-[10px] text-[var(--muted)]">Tamanho (% do QR)</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="range"
+                                min={10}
+                                max={40}
+                                step={1}
+                                value={logoSize}
+                                onChange={(e) => setLogoSize(Number(e.target.value))}
+                                className="w-full accent-[var(--brand)]"
+                              />
+                              <span className="text-xs text-[var(--muted)]">{logoSize}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
