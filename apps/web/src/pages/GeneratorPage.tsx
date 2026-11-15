@@ -986,8 +986,14 @@ export default function GeneratorPage() {
                   <span className="text-xs subtle">Pré-visualização aparecerá aqui</span>
                 </div>
               )}
-              <div className="mt-2 text-xs text-[var(--muted)]">
-                {contentValid ? '✓ Leitura verificada' : 'Complete o conteúdo no passo 2'}
+              <div className="mt-2 flex items-center justify-center gap-1">
+                {contentValid ? (
+                  <span className="inline-flex items-center gap-1 rounded border border-[var(--brand)] px-2 py-0.5 text-[var(--brand)] text-[10px] font-medium">
+                    ✓ Leitura verificada
+                  </span>
+                ) : (
+                  <span className="text-xs text-[var(--muted)]">Complete o conteúdo no passo 2</span>
+                )}
               </div>
             </div>
           </div>
