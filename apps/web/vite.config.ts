@@ -18,7 +18,9 @@ export default defineConfig({
     proxy: {
       // No dev, API e redirector rodam no wrangler dev (:8787).
       '/qrcode/api': 'http://localhost:8787',
-      '/q': 'http://localhost:8787',
+      // Apenas /q/<codigo>: o prefixo solto "/q" casaria com "/qrcode" e
+      // mandaria a SPA para o Worker (servindo dist antigo em vez do fonte).
+      '^/q/': 'http://localhost:8787',
     },
   },
 });
