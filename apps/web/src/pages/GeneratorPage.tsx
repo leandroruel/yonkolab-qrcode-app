@@ -154,45 +154,66 @@ export default function GeneratorPage() {
     return url.trim();
   }, [type, country, phone, message, url]);
 
+  // Gera a imagem do QR e retorna o data URL (sem tocar em estado do React).
+  const buildQrDataUrl = useCallback(async (): Promise<string | null> => {
+    if (!payload) return null;
+    const instance = new QRCodeStyling({
+      width: 512,
+      height: 512,
+      type: 'canvas',
+      data: payload,
+      margin,
+      qrOptions: { errorCorrectionLevel: 'Q' },
+      dotsOptions: { color, type: 'rounded' },
+      cornersSquareOptions: { color, type: 'extra-rounded' },
+      cornersDotOptions: { color },
+      backgroundOptions: { color: bgColor },
+    });
+    const blob = await instance.getRawData('png');
+    if (!(blob instanceof Blob)) return null;
+    const reader = new FileReader();
+    return new Promise<string | null>((resolve) => {
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  }, [payload, margin, color, bgColor]);
+
+  // Pré-visualização ao vivo: regenera o QR sempre que conteúdo ou estilo mudam.
+  useEffect(() => {
+    if (!payload) return;
+    let mounted = true;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      const dataUrl = await buildQrDataUrl();
+      if (!mounted) return;
+      if (dataUrl) setQrDataUrl(dataUrl);
+      else setError('Não foi possível gerar o QR code. Tente novamente.');
+      setLoading(false);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [payload, buildQrDataUrl]);
+
   const generateQr = useCallback(async () => {
     if (!payload) {
       setError('Preencha o conteúdo do QR code antes de gerar.');
       return;
     }
-
     setLoading(true);
     setError(null);
-    try {
-      const instance = new QRCodeStyling({
-        width: 512,
-        height: 512,
-        type: 'canvas',
-        data: payload,
-        margin,
-        qrOptions: { errorCorrectionLevel: 'Q' },
-        dotsOptions: { color, type: 'rounded' },
-        cornersSquareOptions: { color, type: 'extra-rounded' },
-        cornersDotOptions: { color },
-        backgroundOptions: { color: bgColor },
-      });
-      const blob = await instance.getRawData('png');
-      if (!(blob instanceof Blob)) throw new Error('Falha ao gerar imagem');
-
-      const reader = new FileReader();
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(blob);
-      });
-
-      setQrDataUrl(dataUrl);
-      setStep(3);
-    } catch {
+    const dataUrl = await buildQrDataUrl();
+    if (!dataUrl) {
       setError('Não foi possível gerar o QR code. Tente novamente.');
-    } finally {
       setLoading(false);
+      return;
     }
-  }, [payload, margin, color, bgColor, setStep]);
+    setQrDataUrl(dataUrl);
+    setLoading(false);
+    setStep(3);
+  }, [payload, buildQrDataUrl, setStep]);
 
   const download = useCallback(() => {
     if (!qrDataUrl) return;
