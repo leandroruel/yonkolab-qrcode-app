@@ -3,9 +3,51 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>YonkoLab QR</title>
-    <meta name="description" content="QR codes dinâmicos com analytics — edite o destino sem reimprimir." />
+    <title>QR Code com logo grátis | YonkoLab QR</title>
+    <meta
+      name="description"
+      content="Crie QR Code com sua logo, cores e moldura em segundos. Baixe em PNG, JPG ou SVG. Grátis, sem cadastro e funciona com PIX e WhatsApp."
+    />
+    <link rel="canonical" href="https://qr.yonkolab.xyz/qrcode/" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#08080c" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="YonkoLab QR" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:url" content="https://qr.yonkolab.xyz/qrcode/" />
+    <meta property="og:title" content="QR Code com logo grátis | YonkoLab QR" />
+    <meta
+      property="og:description"
+      content="Escolha o tipo, preencha o conteúdo, personalize e baixe. Grátis e sem cadastro."
+    />
+    <meta property="og:image" content="https://qr.yonkolab.xyz/qrcode/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="YonkoLab QR — QR Code com a sua logo" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="QR Code com logo grátis | YonkoLab QR" />
+    <meta
+      name="twitter:description"
+      content="Escolha o tipo, preencha o conteúdo, personalize e baixe. Grátis e sem cadastro."
+    />
+    <meta name="twitter:image" content="https://qr.yonkolab.xyz/qrcode/og.png" />
+
+    <script>
+      // Tema antes do primeiro paint (evita flash). Padrão: preferência do sistema.
+      (function () {
+        try {
+          var stored = localStorage.getItem('yonkolab:theme');
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (stored === 'dark' || (!stored && prefersDark)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+        document.documentElement.classList.add('js');
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
