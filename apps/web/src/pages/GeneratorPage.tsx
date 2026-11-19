@@ -477,15 +477,26 @@ export default function GeneratorPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Check authentication status on mount
+  // Check authentication status on mount: sessão real do worker
+  // (cookie httpOnly via /auth/me) + marcador demo em localStorage.
   useEffect(() => {
-    const checkAuth = () => {
-      // In a real app, check backend session or better-auth token
-      // For this demo, check for session marker in localStorage
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('/qrcode/api/auth/me');
+        if (res.ok) {
+          const me = (await res.json()) as { name?: string; email?: string };
+          localStorage.setItem('yonkolab_auth', 'authenticated');
+          localStorage.setItem('yonkolab_user', JSON.stringify(me));
+          setIsAuthenticated(true);
+          return;
+        }
+      } catch {
+        // Worker fora do ar em dev: cai no marcador local abaixo.
+      }
       const session = localStorage.getItem('yonkolab_auth');
       setIsAuthenticated(!!session);
     };
-    checkAuth();
+    void checkAuth();
   }, []);
 
   // Conteúdo (passo 2)

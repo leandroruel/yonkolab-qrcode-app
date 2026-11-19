@@ -33,6 +33,7 @@ const GOOGLE_SCOPES = ['openid', 'profile', 'email'];
 interface OAuthFlow {
   state: string;
   verifier: string;
+  next?: string;
 }
 
 const textEncoder = new TextEncoder();
@@ -46,7 +47,11 @@ function decodeFlow(raw: string): OAuthFlow | null {
   try {
     const parsed = JSON.parse(textDecoder.decode(fromBase64Url(raw))) as Partial<OAuthFlow>;
     if (typeof parsed.state !== 'string' || typeof parsed.verifier !== 'string') return null;
-    return { state: parsed.state, verifier: parsed.verifier };
+    return {
+      state: parsed.state,
+      verifier: parsed.verifier,
+      next: typeof parsed.next === 'string' ? parsed.next : undefined,
+    };
   } catch {
     return null;
   }
@@ -78,7 +83,14 @@ authApp.get('/google', (c) => {
   const state = randomToken(32);
   const verifier = randomToken(32); // ~43 chars, dentro do intervalo 43–128 do PKCE
 
-  setCookie(c, OAUTH_COOKIE, encodeFlow({ state, verifier }), {
+  // Destino pós-login: só caminhos internos sob /qrcode (evita open redirect).
+  const nextParam = c.req.query('next');
+  const next =
+    nextParam === APP_BASE_PATH || nextParam?.startsWith(`${APP_BASE_PATH}/`)
+      ? nextParam
+      : undefined;
+
+  setCookie(c, OAUTH_COOKIE, encodeFlow({ state, verifier, next }), {
     httpOnly: true,
     secure: true,
     sameSite: 'Lax',
@@ -164,7 +176,8 @@ authApp.get('/google/callback', async (c) => {
   const { token, expiresAt } = await createSession(db, user.id);
   setSessionCookie(c, token, expiresAt);
 
-  return c.redirect(`${requestOrigin(c)}${APP_BASE_PATH}/`);
+  const dest = flow.next ?? `${APP_BASE_PATH}/`;
+  return c.redirect(`${requestOrigin(c)}${dest}`);
 });
 
 /** Encerra a sessão (remove do D1 e apaga o cookie). */
