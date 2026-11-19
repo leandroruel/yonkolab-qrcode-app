@@ -22,3 +22,6 @@ coverage/
 .DS_Store
 .idea/
 .vscode/
+
+# Local dev database
+apps/web/prisma/dev.sqlite*

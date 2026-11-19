@@ -15,6 +15,30 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { AuthModal } from '@/components/AuthModal';
+import { defineStepper } from '@stepperize/react/headless';
+import { FrameThumbnail } from '@/components/FrameThumbnail';
+import { COLOR_PRESETS, FRAMES, composeFrame, framePalette } from '@/lib/qr-frames';
+
+const qrFlow = defineStepper([
+  { id: 'tipo', title: 'Escolha o tipo de QR' },
+  { id: 'conteudo', title: 'Criar conteúdo' },
+  { id: 'moldura', title: 'Moldura' },
+  { id: 'personalizar', title: 'Personalizar e baixar' },
+]);
+
+type QrStepId = 'tipo' | 'conteudo' | 'moldura' | 'personalizar';
+
+const QR_STEP_IDS: readonly QrStepId[] = ['tipo', 'conteudo', 'moldura', 'personalizar'];
+
+function stepIdFromParam(passoParam: string | null, tipoValido: boolean): QrStepId {
+  const parsed = passoParam ? Number(passoParam) : NaN;
+  if (Number.isFinite(parsed)) {
+    const n = Math.min(Math.max(Math.trunc(parsed), 1), QR_STEP_IDS.length);
+    return QR_STEP_IDS[n - 1] ?? 'tipo';
+  }
+  return tipoValido ? 'conteudo' : 'tipo';
+}
 
 type QrType =
   | 'site'
@@ -25,13 +49,63 @@ type QrType =
   | 'wifi'
   | 'email';
 
-const STEPS = [
-  { n: 1, label: 'Escolha o tipo de QR', done: true },
-  { n: 2, label: 'Criar conteúdo', done: true },
-  { n: 3, label: 'Personalizar e baixar', done: false },
-] as const;
-
 const DRAFT_KEY = 'yonkolab:qr-draft';
+
+type QrDraft = {
+  step?: number;
+  tipo?: string;
+  url?: string;
+  name?: string;
+  country?: string;
+  phone?: string;
+  message?: string;
+  color?: string;
+  bgColor?: string;
+  margin?: number;
+  qrShape?: string;
+  cornerShape?: string;
+  dotShape?: string;
+  cornerColorMode?: string;
+  cornerColor?: string;
+  logoMode?: string;
+  logoSize?: number;
+  level1Tab?: string;
+  level2Tab?: string;
+  frameId?: string;
+  frameCaption?: string;
+};
+
+function readQrDraft(): QrDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as QrDraft) : null;
+  } catch {
+    return null;
+  }
+}
+
+const READY_TYPE_LIST = ['site', 'whatsapp'] as const;
+const LOGO_MODES = ['nenhum', 'enviar'] as const;
+const CORNER_COLOR_MODES = ['igual', 'personalizada'] as const;
+const QR_SHAPE_VALUES = ['square', 'rounded', 'circle'] as const;
+const CORNER_DOT_VALUES = [
+  'square',
+  'rounded',
+  'circle',
+  'top-left-rounded',
+  'bottom-right-rounded',
+] as const;
+const LEVEL1_VALUES = ['custom', 'brand', 'ai'] as const;
+const LEVEL2_VALUES = ['geral', 'personalizacao', 'senha', 'agendamento'] as const;
+
+const asStr = (v: unknown): string | undefined =>
+  typeof v === 'string' ? v : undefined;
+const asNum = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+const asOneOf = <T extends string>(v: unknown, allowed: readonly T[]): T | undefined =>
+  typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : undefined;
 
 /** Tipos que o gerador já entrega conteúdo neste passo da entrega. */
 const READY_TYPES = new Set<QrType>(['site', 'whatsapp']);
@@ -353,54 +427,123 @@ export default function GeneratorPage() {
   const tipoValido =
     tipoParam !== null && READY_TYPES.has(tipoParam as QrType);
   const passoParam = searchParams.get('passo');
+  const retomar = searchParams.get('retomar') === '1';
+  const [initialDraft] = useState<QrDraft | null>(() =>
+    retomar ? readQrDraft() : null,
+  );
 
   const [type, setType] = useState<QrType>(
-    (tipoParam ?? 'site') === 'whatsapp' ? 'whatsapp' : 'site',
+    asOneOf(initialDraft?.tipo, READY_TYPE_LIST) ??
+      ((tipoParam ?? 'site') === 'whatsapp' ? 'whatsapp' : 'site'),
   );
-  const [step, setStep] = useState(() => {
-    const parsed = passoParam ? Number(passoParam) : NaN;
-    if (Number.isFinite(parsed)) return Math.min(Math.max(Math.trunc(parsed), 1), 3);
-    return tipoValido ? 2 : 1;
+  const stepper = qrFlow.useStepper({
+    snapshot: { step: stepIdFromParam(passoParam, tipoValido) },
   });
-
-  // Mantém um rascunho local para o CTA "Continuar meu QR Code" da landing.
-  useEffect(() => {
-    if (step < 2) return;
-    try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ step, tipo: type }));
-    } catch {
-      // localStorage indisponível: sem rascunho nesta sessão.
-    }
-  }, [step, type]);
+  const step = stepper.index + 1;
 
   const [loading, setLoading] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Auth state
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Check authentication status on mount
+  useEffect(() => {
+    const checkAuth = () => {
+      // In a real app, check backend session or better-auth token
+      // For this demo, check for session marker in localStorage
+      const session = localStorage.getItem('yonkolab_auth');
+      setIsAuthenticated(!!session);
+    };
+    checkAuth();
+  }, []);
+
   // Conteúdo (passo 2)
-  const [url, setUrl] = useState('');
-  const [name, setName] = useState('Meu QR code');
-  const [country, setCountry] = useState('55');
-  const [phone, setPhone] = useState('');
-  const [message, setMessage] = useState('');
+  const [url, setUrl] = useState(asStr(initialDraft?.url) ?? '');
+  const [name, setName] = useState(asStr(initialDraft?.name) ?? 'Meu QR code');
+  const [country, setCountry] = useState(asStr(initialDraft?.country) ?? '55');
+  const [phone, setPhone] = useState(asStr(initialDraft?.phone) ?? '');
+  const [message, setMessage] = useState(asStr(initialDraft?.message) ?? '');
 
   // Estilo (passo 3)
-  const [color, setColor] = useState('#111111');
-  const [bgColor, setBgColor] = useState('#ffffff');
-  const [margin, setMargin] = useState(2);
-  const [logoMode, setLogoMode] = useState<'nenhum' | 'enviar'>('nenhum');
+  const [color, setColor] = useState(asStr(initialDraft?.color) ?? '#111111');
+  const [bgColor, setBgColor] = useState(asStr(initialDraft?.bgColor) ?? '#ffffff');
+  const [margin, setMargin] = useState(asNum(initialDraft?.margin) ?? 2);
+  const [logoMode, setLogoMode] = useState<'nenhum' | 'enviar'>(
+    asOneOf(initialDraft?.logoMode, LOGO_MODES) ?? 'nenhum',
+  );
   const [logoImage, setLogoImage] = useState<string | null>(null);
-  const [logoSize, setLogoSize] = useState(20);
+  const [logoSize, setLogoSize] = useState(asNum(initialDraft?.logoSize) ?? 20);
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
-  const [qrShape, setQrShape] = useState<'square' | 'rounded' | 'circle'>('square');
-  const [cornerShape, setCornerShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>('square');
-  const [dotShape, setDotShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>('square');
-  const [cornerColorMode, setCornerColorMode] = useState<'igual' | 'personalizada'>('igual');
-  const [cornerColor, setCornerColor] = useState('#111111');
+  const [qrShape, setQrShape] = useState<'square' | 'rounded' | 'circle'>(
+    asOneOf(initialDraft?.qrShape, QR_SHAPE_VALUES) ?? 'square',
+  );
+  const [cornerShape, setCornerShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>(
+    asOneOf(initialDraft?.cornerShape, CORNER_DOT_VALUES) ?? 'square',
+  );
+  const [dotShape, setDotShape] = useState<'square' | 'rounded' | 'circle' | 'top-left-rounded' | 'bottom-right-rounded'>(
+    asOneOf(initialDraft?.dotShape, CORNER_DOT_VALUES) ?? 'square',
+  );
+  const [cornerColorMode, setCornerColorMode] = useState<'igual' | 'personalizada'>(
+    asOneOf(initialDraft?.cornerColorMode, CORNER_COLOR_MODES) ?? 'igual',
+  );
+  const [cornerColor, setCornerColor] = useState(asStr(initialDraft?.cornerColor) ?? '#111111');
 
   // Estado do passo 3 (casca — painéis preenchidos nas fatias seguintes)
-  const [level1Tab, setLevel1Tab] = useState<'custom' | 'brand' | 'ai'>('custom');
-  const [level2Tab, setLevel2Tab] = useState<'geral' | 'personalizacao' | 'senha' | 'agendamento'>('personalizacao');
+  const [level1Tab, setLevel1Tab] = useState<'custom' | 'brand' | 'ai'>(
+    asOneOf(initialDraft?.level1Tab, LEVEL1_VALUES) ?? 'custom',
+  );
+  const [level2Tab, setLevel2Tab] = useState<'geral' | 'personalizacao' | 'senha' | 'agendamento'>(
+    asOneOf(initialDraft?.level2Tab, LEVEL2_VALUES) ?? 'personalizacao',
+  );
+
+  // Moldura (passo 3)
+  const [frameId, setFrameId] = useState(asStr(initialDraft?.frameId) ?? 'none');
+  const [frameCaption, setFrameCaption] = useState(asStr(initialDraft?.frameCaption) ?? 'Escaneie-me!');
+  const [qrSvg, setQrSvg] = useState<string | null>(null);
+
+  // Mantém um rascunho local para o CTA "Continuar meu QR Code" da landing
+  // e para restaurar as escolhas após o cadastro.
+  useEffect(() => {
+    if (step < 2) return;
+    try {
+      localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({
+          step,
+          tipo: type,
+          url,
+          name,
+          country,
+          phone,
+          message,
+          color,
+          bgColor,
+          margin,
+          qrShape,
+          cornerShape,
+          dotShape,
+          cornerColorMode,
+          cornerColor,
+          logoMode,
+          logoSize,
+          level1Tab,
+          level2Tab,
+          frameId,
+          frameCaption,
+        }),
+      );
+    } catch {
+      // localStorage indisponível: sem rascunho nesta sessão.
+    }
+  }, [
+    step, type, url, name, country, phone, message, color, bgColor, margin,
+    qrShape, cornerShape, dotShape, cornerColorMode, cornerColor, logoMode,
+    logoSize, level1Tab, level2Tab, frameId, frameCaption,
+  ]);
+
 
   const payload = useMemo(() => {
     if (type === 'whatsapp') {
@@ -471,7 +614,44 @@ export default function GeneratorPage() {
     });
   }, [_qrOptions, payload]);
 
+  const buildQrSvg = useCallback(async (): Promise<string | null> => {
+    if (!payload) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const instance = new QRCodeStyling({ ...(_qrOptions as any), type: 'svg' } as any);
+    const svg = (await instance.getRawData('svg')) as unknown;
+    return typeof svg === 'string' ? svg : null;
+  }, [_qrOptions, payload]);
+
+  useEffect(() => {
+    if (!payload) return;
+    let cancelled = false;
+    void buildQrSvg().then((svg) => {
+      if (!cancelled) setQrSvg(svg);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [buildQrSvg, payload]);
+
+  const framedPreview = useMemo(() => {
+    if (!payload || !qrSvg) return null;
+    const composed = composeFrame(frameId, {
+      qr: qrSvg,
+      s: 512,
+      caption: frameCaption,
+      palette: framePalette(color, bgColor),
+      uid: 'preview',
+    });
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(composed.svg)}`;
+  }, [payload, qrSvg, frameId, frameCaption, color, bgColor]);
+
   const generateQr = useCallback(async () => {
+    // Check authentication before generating QR
+    if (!isAuthenticated) {
+      setIsModalOpen(true);
+      return;
+    }
+
     if (!payload) {
       setError('Preencha o conteúdo do QR code antes de gerar.');
       return;
@@ -486,26 +666,68 @@ export default function GeneratorPage() {
     }
     setQrDataUrl(dataUrl);
     setLoading(false);
-  }, [payload, buildQrDataUrl, setQrDataUrl]);
+  }, [isAuthenticated, payload, buildQrDataUrl, setQrDataUrl, setError]);
+
+  // Geração de QR (data URL) só acontece para usuários autenticados;
+  // a prévia ao vivo usa qrSvg e não depende deste estado.
+  const setQrDataUrlIfAuthed = useCallback(
+    (u: string) => {
+      if (isAuthenticated) setQrDataUrl(u);
+    },
+    [isAuthenticated],
+  );
 
   const downloadQR = useCallback(
     async (format: 'png' | 'jpg' | 'svg', size: number) => {
       if (!payload) return;
       setLoading(true);
       try {
-        const instance = new QRCodeStyling({
-          ...(_qrOptions as Record<string, unknown>),
-          width: size,
-          height: size,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any);
         let blob: Blob;
-        if (format === 'svg') {
-          const svg = (await instance.getRawData('svg')) as string;
-          blob = new Blob([svg], { type: 'image/svg+xml' });
+        if (frameId !== 'none' && qrSvg) {
+          const composed = composeFrame(frameId, {
+            qr: qrSvg,
+            s: 512,
+            caption: frameCaption,
+            palette: framePalette(color, bgColor),
+            uid: 'download',
+          });
+          if (format === 'svg') {
+            blob = new Blob([composed.svg], { type: 'image/svg+xml' });
+          } else {
+            const src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(composed.svg)}`;
+            const img = new Image();
+            await new Promise<void>((resolve, reject) => {
+              img.onload = () => resolve();
+              img.onerror = () => reject(new Error('svg load'));
+              img.src = src;
+            });
+            const scale = size / Math.max(composed.width, composed.height);
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(composed.width * scale));
+            canvas.height = Math.max(1, Math.round(composed.height * scale));
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('canvas');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const raster = await new Promise<Blob | null>((resolve) =>
+              canvas.toBlob(resolve, format === 'jpg' ? 'image/jpeg' : 'image/png'),
+            );
+            if (!raster) throw new Error('toBlob');
+            blob = raster;
+          }
         } else {
-          const type = format === 'jpg' ? 'jpeg' : 'png';
-          blob = (await instance.getRawData(type)) as Blob;
+          const instance = new QRCodeStyling({
+            ...(_qrOptions as Record<string, unknown>),
+            width: size,
+            height: size,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any);
+          if (format === 'svg') {
+            const svg = (await instance.getRawData('svg')) as unknown as string;
+            blob = new Blob([svg], { type: 'image/svg+xml' });
+          } else {
+            const mime = format === 'jpg' ? 'jpeg' : 'png';
+            blob = (await instance.getRawData(mime)) as Blob;
+          }
         }
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -519,7 +741,7 @@ export default function GeneratorPage() {
         setLoading(false);
       }
     },
-    [payload, _qrOptions, setError, setLoading, type],
+    [payload, _qrOptions, frameId, qrSvg, frameCaption, color, bgColor, setError, setLoading, type],
   );
 
   const copyQR = useCallback(async () => {
@@ -533,6 +755,14 @@ export default function GeneratorPage() {
 
   return (
     <div className="space-y-6">
+      {step === 4 && !isAuthenticated && isModalOpen && (
+        <AuthModal
+          isOpen={isModalOpen}
+          setIsOpen={setIsModalOpen}
+          onLoginSuccess={() => setIsAuthenticated(true)}
+          redirectTo="/criar?retomar=1&passo=4"
+        />
+      )}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Gerador de QR code</h1>
         <p className="mt-1 text-sm subtle">
@@ -542,22 +772,22 @@ export default function GeneratorPage() {
 
       {/* Stepper */}
       <ol className="flex items-center gap-2">
-        {STEPS.map((s) => {
-          const active = step === s.n;
-          const done = step > s.n;
+        {stepper.steps.map((s, i) => {
+          const active = stepper.index === i;
+          const done = stepper.index > i;
           return (
-            <li key={s.label} className="flex flex-1 items-center gap-2">
+            <li key={s.id} className="flex flex-1 items-center gap-2">
               <span
                 className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-semibold ${
                   active || done ? 'bg-[var(--brand)] text-white' : 'bg-[var(--surface)] subtle'
                 }`}
               >
-                {done ? '✓' : s.n}
+                {done ? '✓' : i + 1}
               </span>
               <span className={`text-sm ${active ? 'font-medium text-[var(--fg)]' : 'subtle'}`}>
-                {s.label}
+                {s.title}
               </span>
-              {s.n < STEPS.length && <span className="h-px flex-1 bg-[var(--surface)]" />}
+              {i < stepper.steps.length - 1 && <span className="h-px flex-1 bg-[var(--surface)]" />}
             </li>
           );
         })}
@@ -588,7 +818,7 @@ export default function GeneratorPage() {
                 onClick={() => {
                   if (!card.ready) return;
                   setType(card.type);
-                  setStep(2);
+                  void stepper.goTo('conteudo');
                 }}
                 className={`flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors ${
                   card.ready
@@ -618,7 +848,11 @@ export default function GeneratorPage() {
           className="space-y-4 rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4"
           onSubmit={(e) => {
             e.preventDefault();
-            void generateQr();
+            if (!payload) {
+              setError('Preencha o conteúdo do QR code antes de continuar.');
+              return;
+            }
+            void stepper.goTo('moldura');
           }}
         >
           <h2 className="text-sm font-semibold text-[var(--fg)]">
@@ -707,7 +941,7 @@ export default function GeneratorPage() {
           <div className="flex items-center justify-between gap-3 pt-2">
             <button
               type="button"
-              onClick={() => setStep(1)}
+              onClick={() => void stepper.goTo('tipo')}
               className="inline-flex items-center gap-1 text-sm subtle hover:text-[var(--fg)]"
             >
               <ArrowLeft className="h-4 w-4" /> Voltar
@@ -718,15 +952,128 @@ export default function GeneratorPage() {
               className="inline-flex items-center gap-2 rounded-md bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--brand-strong)] disabled:opacity-50"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {loading ? 'Gerando…' : 'Gerar QR code'}
+              {loading ? 'Gerando…' : 'Continuar'}
               {!loading && <ArrowRight className="h-4 w-4" />}
             </button>
           </div>
         </form>
       )}
 
-      {/* Passo 3: Personalizar e baixar (casca) */}
+      {/* Passo 3: moldura */}
       {step === 3 && (
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,736px)_1px_340px]">
+          {/* Coluna esquerda: moldura e cores */}
+          <div className="space-y-4">
+            <div className="space-y-4 rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4">
+              <h2 className="text-sm font-semibold text-[var(--fg)]">Moldura</h2>
+              <div>
+                <label
+                  className="mb-1 block text-xs font-medium text-[var(--fg)]"
+                  htmlFor="frame-caption"
+                >
+                  Texto da moldura
+                </label>
+                <input
+                  id="frame-caption"
+                  type="text"
+                  value={frameCaption}
+                  onChange={(e) => setFrameCaption(e.target.value)}
+                  maxLength={40}
+                  placeholder="Escaneie-me!"
+                  className="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--brand)] focus:outline-none"
+                />
+              </div>
+              <p className="text-xs text-[var(--muted)]">
+                Escolha a moldura. Ela será aplicada na pré-visualização e no arquivo baixado.
+              </p>
+              <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10">
+                {FRAMES.map((frame) => (
+                  <FrameThumbnail
+                    key={frame.id}
+                    frame={frame}
+                    dotsColor={color}
+                    bgColor={bgColor}
+                    active={frameId === frame.id}
+                    onSelect={() => setFrameId(frame.id)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4">
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-[var(--fg)] uppercase tracking-wider">
+                  Predefinições de cores
+                </h3>
+                <span className="text-[10px] text-[var(--muted)]">Clique para aplicar</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {COLOR_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => {
+                      setColor(preset.dots);
+                      setBgColor(preset.bg);
+                    }}
+                    className={`flex flex-col items-center gap-1.5 rounded-md border p-1.5 transition-colors ${
+                      color === preset.dots && bgColor === preset.bg
+                        ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]'
+                        : 'border-[var(--line)] bg-[var(--elevated)] text-[var(--fg)] hover:border-[var(--brand)]'
+                    }`}
+                  >
+                    <div className="flex gap-1">
+                      <div
+                        className="w-5 h-5 rounded-sm border border-[var(--line)]"
+                        style={{
+                          backgroundColor: preset.bg,
+                          borderColor: preset.bg === '#ffffff' ? '#cbd5e1' : 'transparent',
+                        }}
+                      />
+                      <div
+                        className="w-5 h-5 rounded-sm border border-[var(--line)]"
+                        style={{ backgroundColor: preset.dots }}
+                      />
+                      <div
+                        className="w-5 h-5 rounded-sm border border-[var(--line)]"
+                        style={{
+                          backgroundColor: preset.bg,
+                          borderColor: preset.bg === '#ffffff' ? '#cbd5e1' : 'transparent',
+                        }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-medium">{preset.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Divisor vertical (desktop) */}
+          <div className="hidden lg:block w-px bg-[var(--line)] self-stretch" />
+
+          {/* Coluna direita: prévia */}
+          <div className="space-y-4 lg:sticky lg:top-4">
+            <h2 className="text-sm font-semibold text-[var(--fg)]">Pré-visualização</h2>
+            <div className="flex flex-col items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4 aspect-square max-w-[320px] mx-auto">
+              {framedPreview ? (
+                <img
+                  src={framedPreview}
+                  alt="Pré-visualização do QR code"
+                  className="w-full max-w-xs rounded"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full">
+                  <span className="text-xs subtle">Pré-visualização aparecerá aqui</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Passo 4: Personalizar e baixar (casca) */}
+      {step === 4 && (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,736px)_1px_340px]">
           {/* Coluna esquerda: design */}
           <div className="space-y-4">
@@ -804,7 +1151,7 @@ export default function GeneratorPage() {
                   setCornerColorMode={(s) => setCornerColorMode(s as 'igual' | 'personalizada')}
                   _qrOptions={_qrOptions}
                   buildQrDataUrl={buildQrDataUrl}
-                  setQrDataUrl={setQrDataUrl}
+                  setQrDataUrl={setQrDataUrlIfAuthed}
                   loading={loading}
                 />
               )}
@@ -979,8 +1326,12 @@ export default function GeneratorPage() {
               <h2 className="text-sm font-semibold text-[var(--fg)]">Pré-visualização</h2>
             </div>
             <div className="flex flex-col items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--elevated)] p-4 aspect-square max-w-[320px] mx-auto">
-              {qrDataUrl ? (
-                <img src={qrDataUrl} alt="Pré-visualização do QR code" className="w-full max-w-xs rounded" />
+              {(framedPreview ?? qrDataUrl) ? (
+                <img
+                  src={framedPreview ?? qrDataUrl ?? ''}
+                  alt="Pré-visualização do QR code"
+                  className="w-full max-w-xs rounded"
+                />
               ) : (
                 <div className="flex flex-col items-center justify-center h-full">
                   <span className="text-xs subtle">Pré-visualização aparecerá aqui</span>
@@ -996,6 +1347,22 @@ export default function GeneratorPage() {
                 )}
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => void generateQr()}
+              disabled={loading || !contentValid}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[var(--brand)] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[var(--brand-strong)] disabled:opacity-50"
+            >
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {loading ? 'Gerando…' : qrDataUrl ? 'Atualizar QR code' : 'Gerar QR code'}
+              {!loading && <ArrowRight className="h-4 w-4" />}
+            </button>
+            {!isAuthenticated && (
+              <p className="text-center text-[10px] subtle">
+                Entre ou crie uma conta para gerar o QR code.
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -1004,7 +1371,10 @@ export default function GeneratorPage() {
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-[var(--line)]">
         <button
           type="button"
-          onClick={() => setStep(2)}
+          onClick={() => {
+            const prev = step === 4 ? 'moldura' : step === 3 ? 'conteudo' : 'tipo';
+            void stepper.goTo(prev);
+          }}
           disabled={!contentValid}
           className="inline-flex items-center gap-1 text-sm subtle hover:text-[var(--fg)] disabled:opacity-50"
         >

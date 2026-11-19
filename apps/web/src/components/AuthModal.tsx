@@ -1,18 +1,21 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogIn, UserPlus, Mail } from 'lucide-react';
 
 export function AuthModal({
   isOpen,
   setIsOpen,
   onLoginSuccess,
+  redirectTo,
 }: {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   onLoginSuccess?: () => void;
+  redirectTo?: string;
 }) {
   const navigate = useNavigate();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
+
+  if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +43,7 @@ export function AuthModal({
         localStorage.setItem('yonkolab_auth', 'authenticated');
         
         if (onLoginSuccess) onLoginSuccess();
-        navigate('/');
+        navigate(redirectTo ?? '/');
       } catch (error) {
         console.error('Signup error:', error);
         // Stay on modal with error indication
@@ -51,7 +54,7 @@ export function AuthModal({
       // Login flow - set auth session
       localStorage.setItem('yonkolab_auth', 'authenticated');
       if (onLoginSuccess) onLoginSuccess();
-      navigate('/');
+      navigate(redirectTo ?? '/');
     }
   };
 
