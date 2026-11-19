@@ -107,6 +107,34 @@ const asNum = (v: unknown): number | undefined =>
 const asOneOf = <T extends string>(v: unknown, allowed: readonly T[]): T | undefined =>
   typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : undefined;
 
+// getRawData('svg') devolve uma data URL (base64), não o markup SVG.
+async function coerceSvgMarkup(raw: unknown): Promise<string | null> {
+  let text: string | null = null;
+  if (typeof raw === 'string') text = raw;
+  else if (raw instanceof Blob) text = await raw.text();
+  else if (raw != null) text = String(raw);
+  if (!text) return null;
+  if (text.startsWith('data:')) {
+    const comma = text.indexOf(',');
+    if (comma === -1) return null;
+    const meta = text.slice(0, comma);
+    const body = text.slice(comma + 1);
+    if (meta.includes(';base64')) {
+      try {
+        const bin = atob(body);
+        const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+        text = new TextDecoder().decode(bytes);
+      } catch {
+        return null;
+      }
+    } else {
+      text = decodeURIComponent(body);
+    }
+  }
+  const markup = text.replace(/^\s*<\?xml[\s\S]*?\?>/, '');
+  return markup.includes('<svg') ? markup : null;
+}
+
 /** Tipos que o gerador já entrega conteúdo neste passo da entrega. */
 const READY_TYPES = new Set<QrType>(['site', 'whatsapp']);
 
@@ -191,14 +219,14 @@ function ShapeThumb({ value, active, label, onClick }: { value: ShapeOption; act
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`flex flex-col items-center gap-1 rounded-xl border p-2 transition-colors ${
+      className={`flex min-w-0 flex-col items-center gap-1 rounded-xl border p-2 transition-colors ${
         active
           ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]'
           : 'border-[var(--line)] bg-[var(--elevated)] text-[var(--fg)] hover:border-[var(--brand)]'
       }`}
     >
       <span className="text-lg" aria-hidden>{shapeIcon(value)}</span>
-      <span className="text-[10px] font-medium">{label}</span>
+      <span className="w-full truncate text-center text-[10px] font-medium leading-tight">{label}</span>
     </button>
   );
 }
@@ -274,7 +302,7 @@ function PersonalizationPanel({
       {/* 6.1 Formato do QR */}
       <div className="space-y-2">
         <label className="text-xs font-medium text-[var(--fg)] uppercase tracking-wider">Formato do QR</label>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {QR_SHAPES.map((shape) => (
             <ShapeThumb
               key={shape}
@@ -294,7 +322,7 @@ function PersonalizationPanel({
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-2">
           <label className="text-xs font-medium text-[var(--fg)] uppercase tracking-wider">Formato do quadrado do canto</label>
-          <div className="flex gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {CORNER_SHAPES.map((shape) => (
               <ShapeThumb
                 key={shape}
@@ -311,7 +339,7 @@ function PersonalizationPanel({
         </div>
         <div className="space-y-2">
           <label className="text-xs font-medium text-[var(--fg)] uppercase tracking-wider">Formato do ponto do canto</label>
-          <div className="flex gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {DOT_SHAPES.map((shape) => (
               <ShapeThumb
                 key={shape}
@@ -616,10 +644,18 @@ export default function GeneratorPage() {
 
   const buildQrSvg = useCallback(async (): Promise<string | null> => {
     if (!payload) return null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const instance = new QRCodeStyling({ ...(_qrOptions as any), type: 'svg' } as any);
-    const svg = (await instance.getRawData('svg')) as unknown;
-    return typeof svg === 'string' ? svg : null;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const instance = new QRCodeStyling({ ...(_qrOptions as any), type: 'svg' } as any);
+      const raw = (await instance.getRawData('svg')) as unknown;
+      const markup = await coerceSvgMarkup(raw);
+      if (!markup) return null;
+      return /\bwidth\s*=/.test(markup)
+        ? markup
+        : markup.replace('<svg ', '<svg width="512" height="512" ');
+    } catch {
+      return null;
+    }
   }, [_qrOptions, payload]);
 
   useEffect(() => {
@@ -722,7 +758,9 @@ export default function GeneratorPage() {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } as any);
           if (format === 'svg') {
-            const svg = (await instance.getRawData('svg')) as unknown as string;
+            const raw = (await instance.getRawData('svg')) as unknown;
+            const svg = await coerceSvgMarkup(raw);
+            if (!svg) throw new Error('svg vazio');
             blob = new Blob([svg], { type: 'image/svg+xml' });
           } else {
             const mime = format === 'jpg' ? 'jpeg' : 'png';
@@ -986,7 +1024,7 @@ export default function GeneratorPage() {
               <p className="text-xs text-[var(--muted)]">
                 Escolha a moldura. Ela será aplicada na pré-visualização e no arquivo baixado.
               </p>
-              <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10">
+              <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                 {FRAMES.map((frame) => (
                   <FrameThumbnail
                     key={frame.id}
@@ -1380,6 +1418,17 @@ export default function GeneratorPage() {
         >
           <ArrowLeft className="h-4 w-4" /> Voltar
         </button>
+        {step === 3 && (
+          <button
+            type="button"
+            onClick={() => void stepper.goTo('personalizar')}
+            disabled={!contentValid}
+            className="inline-flex items-center gap-2 rounded-md bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--brand-strong)] disabled:opacity-50"
+          >
+            Próximo
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void downloadQR('png', 512)}

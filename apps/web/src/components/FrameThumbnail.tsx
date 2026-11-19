@@ -31,26 +31,24 @@ export function FrameThumbnail({
       type="button"
       onClick={onSelect}
       aria-pressed={active}
-      className={`rounded-xl border p-2 transition-colors ${
+      className={`w-full rounded-xl border p-2 text-center transition-colors ${
         active
           ? 'border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]'
           : 'border-[var(--line)] bg-[var(--elevated)] text-[var(--fg)] hover:border-[var(--brand)]'
       }`}
     >
-      <div className="relative flex items-center justify-center aspect-square min-h-[120px]">
+      <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg bg-[var(--surface)]">
         {src ? (
           <img
             src={src}
             alt={`Moldura: ${frame.label}`}
-            className="w-full h-full rounded-lg object-cover"
+            className="h-full w-full object-contain"
           />
         ) : (
-          <div className="w-full h-full rounded-lg bg-[var(--surface)] animate-pulse" />
+          <div className="h-full w-full animate-pulse" />
         )}
-        <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-[10px] font-medium text-[var(--fg)] whitespace-nowrap">
-          {frame.label}
-        </span>
       </div>
+      <span className="mt-1.5 block truncate text-[10px] font-medium">{frame.label}</span>
     </button>
   );
 }
